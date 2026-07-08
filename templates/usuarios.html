@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuários — Console de Chamados</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-sub">Athos Tecnologia · Uso interno</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
+      <div class="user-chip">
+        <div class="avatar">{{ usuario_iniciais }}</div>
+        <div>
+          <div class="user-name">{{ usuario_nome }}</div>
+          <div class="user-role">{{ usuario_papel }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Gestão de <span>Usuários</span></div>
+      <div class="page-meta">Administração de contas de atendentes e administradores</div>
+    </div>
+    <div class="header-actions">
+      <a class="btn btn-ghost" href="{{ url_for('board') }}">&#8592; Board</a>
+      <button class="btn btn-primary" id="btn-novo-usuario">+ Novo usuário</button>
+    </div>
+  </div>
+
+  <div class="users-table-wrap">
+    {% if usuarios %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Usuário</th>
+          <th>E-mail</th>
+          <th>Papel</th>
+          <th style="text-align:center;">Chamados ativos</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr id="user-row-{{ u.id }}" {% if not u.ativo %}style="opacity:0.55;"{% endif %}>
+          <td>
+            <div class="user-row-info">
+              <div class="avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0;">{{ u.iniciais_u }}</div>
+              <span style="font-weight:500;">{{ u.nome }}</span>
+            </div>
+          </td>
+          <td style="color:var(--text-mid); font-size:12.5px;">{{ u.email }}</td>
+          <td>
+            <span class="badge papel-{{ u.papel }}">{{ 'Admin' if u.papel == 'admin' else 'Atendente' }}</span>
+          </td>
+          <td style="text-align:center; color:{% if u.chamados_ativos > 0 %}var(--amber-soft){% else %}var(--text-low){% endif %}; font-family:var(--font-display); font-size:16px;">
+            {{ u.chamados_ativos }}
+          </td>
+          <td>
+            <span class="badge {% if u.ativo %}badge-ativo{% else %}badge-inativo{% endif %}" id="badge-status-{{ u.id }}">
+              {{ 'Ativo' if u.ativo else 'Inativo' }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm"
+                      data-id="{{ u.id }}"
+                      data-nome="{{ u.nome | e }}"
+                      data-papel="{{ u.papel }}"
+                      onclick="abrirEdicao(this)">
+                Editar
+              </button>
+              {% if u.id != usuario_id %}
+              <button class="btn btn-ghost btn-sm btn-danger"
+                      id="btn-toggle-{{ u.id }}"
+                      onclick="toggleUsuario({{ u.id }}, {{ 1 if u.ativo else 0 }})">
+                {{ 'Desativar' if u.ativo else 'Ativar' }}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">Nenhum usuário cadastrado.</div>
+    {% endif %}
+  </div>
+
+  <!-- Modal: novo usuário -->
+  <div class="modal-overlay" id="modal-novo-usuario">
+    <div class="modal-box">
+      <div class="modal-title">Novo usuário</div>
+      <form method="post" action="{{ url_for('criar_usuario') }}">
+        <label class="field-label">Nome completo</label>
+        <input class="field-input" type="text" name="nome" required placeholder="Ex: Ana Lima">
+
+        <label class="field-label">E-mail</label>
+        <input class="field-input" type="email" name="email" required placeholder="ana@athos.com.br">
+
+        <label class="field-label">Senha inicial</label>
+        <input class="field-input" type="password" name="senha" required placeholder="Mínimo 6 caracteres">
+
+        <label class="field-label">Papel</label>
+        <select class="field-input" name="papel">
+          <option value="atendente">Atendente</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" style="flex:1;" onclick="fecharModal('modal-novo-usuario')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="flex:1;">Criar usuário</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: editar usuário -->
+  <div class="modal-overlay" id="modal-editar-usuario">
+    <div class="modal-box">
+      <div class="modal-title">Editar usuário</div>
+      <form id="form-editar-usuario" method="post">
+        <label class="field-label">Nome completo</label>
+        <input class="field-input" type="text" name="nome" id="edit-nome" required>
+
+        <label class="field-label">Papel</label>
+        <select class="field-input" name="papel" id="edit-papel">
+          <option value="atendente">Atendente</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <label class="field-label">Nova senha <small style="color:var(--text-low);">(deixar em branco para manter)</small></label>
+        <input class="field-input" type="password" name="senha" placeholder="••••••••">
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" style="flex:1;" onclick="fecharModal('modal-editar-usuario')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="flex:1;">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("btn-novo-usuario").addEventListener("click", () => {
+      document.getElementById("modal-novo-usuario").classList.add("open");
+    });
+
+    function fecharModal(id) {
+      document.getElementById(id).classList.remove("open");
+    }
+
+    document.querySelectorAll(".modal-overlay").forEach(m => {
+      m.addEventListener("click", e => { if (e.target === m) m.classList.remove("open"); });
+    });
+
+    function abrirEdicao(btn) {
+      document.getElementById("edit-nome").value = btn.dataset.nome;
+      document.getElementById("edit-papel").value = btn.dataset.papel;
+      document.getElementById("form-editar-usuario").action = `/usuarios/${btn.dataset.id}/editar`;
+      document.querySelector("#form-editar-usuario input[type=password]").value = "";
+      document.getElementById("modal-editar-usuario").classList.add("open");
+    }
+
+    async function toggleUsuario(id, ativo) {
+      const resp = await fetch(`/usuarios/${id}/toggle`, { method: "POST" });
+      if (!resp.ok) { alert("Erro ao alterar status."); return; }
+
+      const row = document.getElementById(`user-row-${id}`);
+      const badge = document.getElementById(`badge-status-${id}`);
+      const btn = document.getElementById(`btn-toggle-${id}`);
+      const novoAtivo = ativo === 1 ? 0 : 1;
+
+      badge.textContent = novoAtivo ? "Ativo" : "Inativo";
+      badge.className = `badge ${novoAtivo ? "badge-ativo" : "badge-inativo"}`;
+      btn.textContent = novoAtivo ? "Desativar" : "Ativar";
+      btn.setAttribute("onclick", `toggleUsuario(${id}, ${novoAtivo})`);
+      row.style.opacity = novoAtivo ? "1" : "0.55";
+    }
+  </script>
+</body>
+</html>

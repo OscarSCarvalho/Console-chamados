@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#{{ '%04d'|format(chamado.id) }} — {{ chamado.titulo }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-sub">Athos Tecnologia · Uso interno</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      {% if usuario_papel == 'admin' %}
+      <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Usuários">&#128101;</a>
+      {% endif %}
+      <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
+      <div class="user-chip">
+        <div class="avatar">{{ usuario_iniciais }}</div>
+        <div>
+          <div class="user-name">{{ usuario_nome }}</div>
+          <div class="user-role">{{ usuario_papel }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="breadcrumb-bar">
+    <a class="back-link" href="{{ url_for('board') }}">&#8592; Voltar ao board</a>
+    <span class="breadcrumb-sep">|</span>
+    <span class="breadcrumb-id">#{{ '%04d'|format(chamado.id) }}</span>
+  </div>
+
+  <div class="page-header">
+    <div style="flex:1; min-width:0;">
+      <div class="page-title" style="font-size:20px; word-break:break-word;">{{ chamado.titulo }}</div>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <span class="badge s-{{ chamado.status }}">{{ {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','resolvido':'Resolvido'}[chamado.status] }}</span>
+        <span class="card-priority p-{{ chamado.prioridade }}">{{ {'alta':'Alta','media':'Média','baixa':'Baixa'}[chamado.prioridade] }}</span>
+        {% if chamado.setor_nome %}<span class="tag">{{ chamado.setor_nome }}</span>{% endif %}
+        <span class="breadcrumb-id" style="margin-left:4px;">{{ chamado.tempo_aberto }}</span>
+      </div>
+    </div>
+    {% if usuario_papel == 'admin' %}
+    <div style="flex-shrink:0;">
+      <button class="btn btn-ghost btn-sm" id="btn-excluir" style="color:#ef8b88; border-color:rgba(217,83,79,0.35);">
+        Excluir chamado
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="detail-grid">
+
+    <!-- ===== MAIN ===== -->
+    <div class="detail-main">
+
+      <div class="detail-card">
+        <div class="detail-card-title">Descrição</div>
+        {% if chamado.descricao %}
+        <div class="chamado-desc">{{ chamado.descricao }}</div>
+        {% else %}
+        <div class="chamado-desc vazio">Sem descrição fornecida.</div>
+        {% endif %}
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-card-title">Histórico &amp; Comentários</div>
+        <div class="timeline">
+
+          {% set STATUS_LABEL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','resolvido':'Resolvido'} %}
+
+          {% for ev in timeline %}
+          <div class="tl-item">
+            {% if not loop.last %}<div class="tl-connector"></div>{% endif %}
+
+            {% if ev.tipo == 'comentario' %}
+              <div class="tl-icon ti-comment">{{ ev.usuario_nome | iniciais }}</div>
+              <div class="tl-body">
+                <div class="tl-header">
+                  <span class="tl-user">{{ ev.usuario_nome or 'Sistema' }}</span>
+                  <span class="tl-time">{{ ev.tempo }}</span>
+                </div>
+                <div class="tl-comment-box">{{ ev.texto }}</div>
+              </div>
+
+            {% else %}
+              <div class="tl-icon ti-mov">&#8644;</div>
+              <div class="tl-body">
+                <div class="tl-header">
+                  <span class="tl-user">{{ ev.usuario_nome or 'Sistema' }}</span>
+                  <span class="tl-time">{{ ev.tempo }}</span>
+                </div>
+                <div class="tl-mov-badges">
+                  {% if ev.status_anterior %}
+                    <span class="badge s-{{ ev.status_anterior }}">{{ STATUS_LABEL[ev.status_anterior] }}</span>
+                    <span class="tl-arrow">&#8594;</span>
+                  {% else %}
+                    <span class="tl-arrow" style="margin-left:0;">Criado como</span>
+                  {% endif %}
+                  <span class="badge s-{{ ev.status_novo }}">{{ STATUS_LABEL[ev.status_novo] }}</span>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+
+          <!-- Formulário de comentário -->
+          <div class="tl-item">
+            <div class="tl-icon ti-comment" style="border-color:var(--navy-border);">{{ usuario_iniciais }}</div>
+            <div class="tl-body">
+              <form method="post" action="{{ url_for('adicionar_comentario', chamado_id=chamado.id) }}">
+                <textarea class="field-input" name="texto" placeholder="Adicionar um comentário..." required style="min-height:72px; resize:vertical;"></textarea>
+                <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+                  <button type="submit" class="btn btn-primary btn-sm">Comentar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SIDEBAR ===== -->
+    <div class="detail-sidebar">
+
+      <div class="detail-card">
+        <div class="detail-card-title">Status</div>
+        <select class="field-input" id="sel-status" style="margin-top:0;">
+          {% for s, label in [('aberto','Aberto'),('andamento','Em andamento'),('aguardando','Aguardando setor'),('resolvido','Resolvido')] %}
+          <option value="{{ s }}" {% if chamado.status == s %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-ghost btn-sm" id="btn-salvar-status" style="margin-top:10px; width:100%; justify-content:center;">
+          Salvar status
+        </button>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-card-title">Atribuição</div>
+        <select class="field-input" id="sel-atribuido" style="margin-top:0;">
+          <option value="">Não atribuído</option>
+          {% for u in usuarios %}
+          <option value="{{ u.id }}" {% if chamado.atribuido_a == u.id %}selected{% endif %}>{{ u.nome }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-ghost btn-sm" id="btn-salvar-atribuicao" style="margin-top:10px; width:100%; justify-content:center;">
+          Atribuir
+        </button>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-card-title">SLA</div>
+        <div class="sla-bar-track {{ chamado.sla.classe }}" style="margin-top:4px; margin-bottom:6px;">
+          <div class="sla-bar-fill" style="width:{{ chamado.sla.percentual }}%"></div>
+        </div>
+        <div class="sla-label {{ chamado.sla.classe }}">
+          <span>{{ chamado.sla.rotulo }}</span>
+          <span>{{ chamado.sla.detalhe }}</span>
+        </div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-card-title">Informações</div>
+        <div class="meta-row">
+          <span class="meta-label">Criado por</span>
+          <span class="meta-value">{{ chamado.criado_por_nome or '—' }}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Atribuído a</span>
+          <span class="meta-value">{{ chamado.atribuido_nome or '—' }}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Setor</span>
+          <span class="meta-value">{{ chamado.setor_nome or '—' }}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">SLA</span>
+          <span class="meta-value">{{ chamado.sla_horas }}h</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Criado em</span>
+          <span class="meta-value" style="font-size:11px;">{{ chamado.criado_em }}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Atualizado</span>
+          <span class="meta-value" style="font-size:11px;">{{ chamado.atualizado_em }}</span>
+        </div>
+        {% if chamado.resolvido_em %}
+        <div class="meta-row">
+          <span class="meta-label">Resolvido em</span>
+          <span class="meta-value" style="font-size:11px; color:#7fd4a6;">{{ chamado.resolvido_em }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const chamadoId = {{ chamado.id }};
+
+    document.getElementById("btn-salvar-status")?.addEventListener("click", async () => {
+      const status = document.getElementById("sel-status").value;
+      const resp = await fetch(`/chamados/${chamadoId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (resp.ok) window.location.reload();
+    });
+
+    document.getElementById("btn-salvar-atribuicao")?.addEventListener("click", async () => {
+      const usuario_id = document.getElementById("sel-atribuido").value || null;
+      const resp = await fetch(`/chamados/${chamadoId}/atribuir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario_id }),
+      });
+      if (resp.ok) window.location.reload();
+    });
+
+    {% if usuario_papel == 'admin' %}
+    document.getElementById("btn-excluir")?.addEventListener("click", async () => {
+      if (!confirm("Excluir este chamado permanentemente? Esta ação não pode ser desfeita.")) return;
+      const resp = await fetch(`/chamados/${chamadoId}`, { method: "DELETE" });
+      if (resp.ok) window.location.href = "{{ url_for('board') }}";
+    });
+    {% endif %}
+  </script>
+</body>
+</html>

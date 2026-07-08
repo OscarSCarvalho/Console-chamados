@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Console de Chamados — Athos Tecnologia</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-sub">Athos Tecnologia · Uso interno</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      {% if usuario_papel == 'admin' %}
+      <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Gerenciar usuários">&#128101;</a>
+      {% endif %}
+      <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
+      <div class="user-chip">
+        <div class="avatar">{{ usuario_iniciais }}</div>
+        <div>
+          <div class="user-name">{{ usuario_nome }}</div>
+          <div class="user-role">{{ usuario_papel }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Painel de <span>Chamados</span></div>
+      <div class="page-meta">Acompanhamento de tickets por status e SLA</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" id="btn-novo-chamado">+ Novo chamado</button>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-card k-total">
+      <div class="kpi-label">Total ativos</div>
+      <div class="kpi-value">{{ kpis.total_ativos }} <small>chamados</small></div>
+    </div>
+    <div class="kpi-card k-andamento">
+      <div class="kpi-label">Em andamento</div>
+      <div class="kpi-value">{{ kpis.em_andamento }} <small>tickets</small></div>
+    </div>
+    <div class="kpi-card k-aguardando">
+      <div class="kpi-label">Aguardando setor</div>
+      <div class="kpi-value">{{ kpis.aguardando_setor }} <small>tickets</small></div>
+    </div>
+    <div class="kpi-card k-atraso">
+      <div class="kpi-label">SLA em risco</div>
+      <div class="kpi-value">{{ kpis.sla_em_risco }} <small>chamados</small></div>
+    </div>
+    <div class="kpi-card k-mttr">
+      <div class="kpi-label">MTTR (30 dias)</div>
+      <div class="kpi-value">{{ kpis.mttr }} <small>horas</small></div>
+    </div>
+    <div class="kpi-card k-taxa">
+      <div class="kpi-label">SLA cumprido</div>
+      <div class="kpi-value">{{ kpis.taxa_sla }} <small>%</small></div>
+    </div>
+  </div>
+
+  <div class="board">
+    {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando setor', 'resolvido': 'Resolvido'} %}
+    {% for status, titulo_coluna in nomes_coluna.items() %}
+    <div class="column col-{{ status }}" data-status="{{ status }}">
+      <div class="column-head">
+        <div class="col-title-wrap"><span class="col-dot"></span><span class="col-title">{{ titulo_coluna }}</span></div>
+        <span class="col-count">{{ colunas[status]|length }}</span>
+      </div>
+      <div class="column-body" data-status="{{ status }}">
+        {% for c in colunas[status] %}
+        <div class="card" draggable="true" data-id="{{ c.id }}">
+          <div class="card-top">
+            <span class="card-id">#{{ '%04d'|format(c.id) }}</span>
+            <span class="card-priority p-{{ c.prioridade }}">
+              {{ {'alta': 'Alta', 'media': 'Média', 'baixa': 'Baixa'}[c.prioridade] }}
+            </span>
+          </div>
+          <div class="card-title">{{ c.titulo }}</div>
+          {% if c.descricao %}<div class="card-desc">{{ c.descricao }}</div>{% endif %}
+          {% if c.setor_nome %}<div class="card-tags"><span class="tag">{{ c.setor_nome }}</span></div>{% endif %}
+
+          <div class="sla-bar-track {{ c.sla.classe }}">
+            <div class="sla-bar-fill" style="width:{{ c.sla.percentual }}%"></div>
+          </div>
+          <div class="sla-label {{ c.sla.classe }}">
+            <span>{{ c.sla.rotulo }}</span><span>{{ c.sla.detalhe }}</span>
+          </div>
+
+          <div class="card-footer">
+            <div class="card-assignee">
+              <div class="mini-avatar">{{ c.atribuido_iniciais }}</div>
+              <span class="card-time">{{ c.atribuido_nome or 'Não atribuído' }}</span>
+            </div>
+            <span class="card-time">{{ c.tempo_aberto }}</span>
+          </div>
+        </div>
+        {% else %}
+        <div class="column-empty">Nenhum chamado por aqui.</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Modal: novo chamado -->
+  <div class="modal-overlay" id="modal-novo">
+    <div class="modal-box">
+      <div class="modal-title">Novo chamado</div>
+      <form method="post" action="{{ url_for('criar_chamado') }}">
+        <label class="field-label">Título</label>
+        <input class="field-input" type="text" name="titulo" placeholder="Resumo do problema" required>
+
+        <label class="field-label">Descrição</label>
+        <textarea class="field-input" name="descricao" placeholder="Detalhes do chamado"></textarea>
+
+        <div class="field-row">
+          <div>
+            <label class="field-label">Prioridade</label>
+            <select class="field-input" name="prioridade">
+              <option value="alta">Alta (SLA 4h)</option>
+              <option value="media" selected>Média (SLA 24h)</option>
+              <option value="baixa">Baixa (SLA 48h)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Setor</label>
+            <select class="field-input" name="setor_id">
+              <option value="">Sem setor</option>
+              {% for s in setores %}
+              <option value="{{ s.id }}">{{ s.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" style="flex:1" id="btn-cancelar-novo">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="flex:1">Criar chamado</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/board.js') }}"></script>
+</body>
+</html>

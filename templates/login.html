@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Console de Chamados</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-mark">A</div>
+        <div>
+          <div class="login-title">Console de Chamados</div>
+          <div class="login-sub">Athos Tecnologia</div>
+        </div>
+      </div>
+
+      {% if erro %}
+        <div class="login-error">{{ erro }}</div>
+      {% endif %}
+
+      <form method="post">
+        <label class="field-label">E-mail</label>
+        <input class="field-input" type="email" name="email" placeholder="seuemail@athos.com.br" required autofocus>
+
+        <label class="field-label">Senha</label>
+        <input class="field-input" type="password" name="senha" placeholder="••••••••" required>
+
+        <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+      </form>
+
+      <div class="login-hint">
+        Acesso restrito à equipe interna (atendentes e administradores).
+      </div>
+    </div>
+  </div>
+</body>
+</html>
