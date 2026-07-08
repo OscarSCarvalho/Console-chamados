@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatórios — Console de Chamados</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-sub">Athos Tecnologia · Uso interno</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      {% if usuario_papel == 'admin' %}
+      <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Usuários">&#128101;</a>
+      {% endif %}
+      <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
+      <div class="user-chip">
+        <div class="avatar">{{ usuario_iniciais }}</div>
+        <div>
+          <div class="user-name">{{ usuario_nome }}</div>
+          <div class="user-role">{{ usuario_papel }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">&#128202; <span>Relatórios</span></div>
+      <div class="page-meta">Visão analítica de desempenho e distribuição dos chamados</div>
+    </div>
+    <div class="header-actions">
+      <a class="btn btn-ghost" href="{{ url_for('board') }}">&#8592; Board</a>
+    </div>
+  </div>
+
+  <!-- ===== SUMÁRIO ===== -->
+  <div class="kpi-row" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="kpi-card k-total">
+      <div class="kpi-label">Total de chamados</div>
+      <div class="kpi-value">{{ sumario.total }} <small>histórico</small></div>
+    </div>
+    <div class="kpi-card k-taxa">
+      <div class="kpi-label">Taxa de resolução</div>
+      <div class="kpi-value">{{ sumario.pct_resolvidos }}<small>%</small>
+        <span style="font-size:12px; color:var(--text-low); margin-left:6px;">{{ sumario.resolvidos }} resolvidos</span>
+      </div>
+    </div>
+    <div class="kpi-card k-mttr">
+      <div class="kpi-label">MTTR médio</div>
+      <div class="kpi-value">{{ sumario.mttr }} <small>horas</small></div>
+    </div>
+    <div class="kpi-card {% if sumario.taxa_sla >= 80 %}k-taxa{% elif sumario.taxa_sla >= 50 %}k-aguardando{% else %}k-atraso{% endif %}">
+      <div class="kpi-label">SLA cumprido</div>
+      <div class="kpi-value">{{ sumario.taxa_sla }}<small>%</small>
+        {% if sumario.alta_pendente > 0 %}
+        <span style="font-size:12px; color:#ef8b88; margin-left:6px;">{{ sumario.alta_pendente }} alta pendente</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LINHA 1: Status + Prioridade ===== -->
+  <div class="relatorios-row" style="padding: 16px 28px 0 28px; display:grid; grid-template-columns: 340px 1fr; gap:16px;">
+
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">Chamados por status</div>
+      <div style="height:220px; position:relative;">
+        <canvas id="chart-status"></canvas>
+      </div>
+    </div>
+
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">Distribuição por prioridade</div>
+      <div style="height:220px; position:relative;">
+        <canvas id="chart-prioridade"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== LINHA 2: Evolução 30 dias ===== -->
+  <div style="padding: 16px 28px 0 28px;">
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">Evolução nos últimos 30 dias — abertos vs resolvidos</div>
+      <div style="height:220px; position:relative;">
+        <canvas id="chart-evolucao"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LINHA 3: Setor + MTTR por prioridade ===== -->
+  <div style="padding: 16px 28px 0 28px; display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">Chamados por setor</div>
+      <div style="height:220px; position:relative;">
+        <canvas id="chart-setor"></canvas>
+      </div>
+    </div>
+
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">MTTR por prioridade (horas)</div>
+      <div style="height:220px; position:relative;">
+        <canvas id="chart-mttr"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== LINHA 4: Carga por atendente ===== -->
+  <div style="padding: 16px 28px 40px 28px;">
+    <div class="detail-card" style="margin-bottom:0;">
+      <div class="detail-card-title">Carga por atendente — ativos vs resolvidos</div>
+      <div style="height:{{ [sumario.total * 18 + 80, 180] | max }}px; position:relative; max-height:320px;">
+        <canvas id="chart-atendente"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Tema global Chart.js
+  Chart.defaults.color = '#9aa5bd';
+  Chart.defaults.borderColor = 'rgba(38,50,82,0.6)';
+  Chart.defaults.font.family = "'Inter', 'Segoe UI', sans-serif";
+  Chart.defaults.font.size = 12;
+
+  const GRID = { color: 'rgba(38,50,82,0.6)' };
+
+  // ── Status (doughnut) ──────────────────────────────────────────
+  new Chart(document.getElementById('chart-status'), {
+    type: 'doughnut',
+    data: {
+      labels: {{ chart_status.labels | tojson }},
+      datasets: [{
+        data: {{ chart_status.data | tojson }},
+        backgroundColor: {{ chart_status.colors | tojson }},
+        borderWidth: 2,
+        borderColor: '#0f1524',
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#9aa5bd', padding: 14, boxWidth: 12, font: { size: 12 } }
+        },
+        tooltip: { callbacks: {
+          label: ctx => ` ${ctx.label}: ${ctx.parsed} chamados`
+        }}
+      }
+    }
+  });
+
+  // ── Prioridade (bar) ───────────────────────────────────────────
+  new Chart(document.getElementById('chart-prioridade'), {
+    type: 'bar',
+    data: {
+      labels: {{ chart_prioridade.labels | tojson }},
+      datasets: [{
+        label: 'Chamados',
+        data: {{ chart_prioridade.data | tojson }},
+        backgroundColor: {{ chart_prioridade.colors | tojson }},
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: GRID, ticks: { color: '#9aa5bd' } },
+        y: { grid: GRID, ticks: { color: '#9aa5bd', precision: 0 }, beginAtZero: true }
+      }
+    }
+  });
+
+  // ── Evolução 30 dias (line) ────────────────────────────────────
+  new Chart(document.getElementById('chart-evolucao'), {
+    type: 'line',
+    data: {
+      labels: {{ chart_evolucao.labels | tojson }},
+      datasets: [
+        {
+          label: 'Abertos',
+          data: {{ chart_evolucao.abertos | tojson }},
+          borderColor: '#5b8def',
+          backgroundColor: 'rgba(91,141,239,0.08)',
+          borderWidth: 2,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#5b8def',
+        },
+        {
+          label: 'Resolvidos',
+          data: {{ chart_evolucao.resolvidos | tojson }},
+          borderColor: '#4caf7d',
+          backgroundColor: 'rgba(76,175,125,0.08)',
+          borderWidth: 2,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#4caf7d',
+        }
+      ]
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#9aa5bd', padding: 16, boxWidth: 12 } }
+      },
+      scales: {
+        x: { grid: GRID, ticks: { color: '#9aa5bd', maxTicksLimit: 10 } },
+        y: { grid: GRID, ticks: { color: '#9aa5bd', precision: 0 }, beginAtZero: true }
+      }
+    }
+  });
+
+  // ── Por setor (bar) ────────────────────────────────────────────
+  new Chart(document.getElementById('chart-setor'), {
+    type: 'bar',
+    data: {
+      labels: {{ chart_setor.labels | tojson }},
+      datasets: [{
+        label: 'Chamados',
+        data: {{ chart_setor.data | tojson }},
+        backgroundColor: 'rgba(176,125,224,0.75)',
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: GRID, ticks: { color: '#9aa5bd' } },
+        y: { grid: GRID, ticks: { color: '#9aa5bd', precision: 0 }, beginAtZero: true }
+      }
+    }
+  });
+
+  // ── MTTR por prioridade (bar) ─────────────────────────────────
+  new Chart(document.getElementById('chart-mttr'), {
+    type: 'bar',
+    data: {
+      labels: {{ chart_mttr.labels | tojson }},
+      datasets: [{
+        label: 'Horas',
+        data: {{ chart_mttr.data | tojson }},
+        backgroundColor: {{ chart_mttr.colors | tojson }},
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y}h` } }
+      },
+      scales: {
+        x: { grid: GRID, ticks: { color: '#9aa5bd' } },
+        y: {
+          grid: GRID,
+          ticks: { color: '#9aa5bd', callback: v => v + 'h' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+
+  // ── Carga por atendente (horizontal bar) ──────────────────────
+  new Chart(document.getElementById('chart-atendente'), {
+    type: 'bar',
+    data: {
+      labels: {{ chart_atendente.labels | tojson }},
+      datasets: [
+        {
+          label: 'Ativos',
+          data: {{ chart_atendente.ativos | tojson }},
+          backgroundColor: 'rgba(217,164,65,0.75)',
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+        {
+          label: 'Resolvidos',
+          data: {{ chart_atendente.resolvidos | tojson }},
+          backgroundColor: 'rgba(76,175,125,0.55)',
+          borderRadius: 4,
+          borderSkipped: false,
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#9aa5bd', padding: 16, boxWidth: 12 } }
+      },
+      scales: {
+        x: { grid: GRID, ticks: { color: '#9aa5bd', precision: 0 }, beginAtZero: true, stacked: false },
+        y: { grid: { display: false }, ticks: { color: '#9aa5bd' } }
+      }
+    }
+  });
+  </script>
+</body>
+</html>

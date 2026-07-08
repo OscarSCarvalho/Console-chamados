@@ -5,7 +5,7 @@ Backend Flask + SQLite puro (sem SQLAlchemy), sessão simples para login.
 import csv
 import io
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import Flask, g, render_template, request, redirect, url_for, session, jsonify, Response
@@ -443,6 +443,141 @@ def excluir_chamado(chamado_id):
     db.execute("DELETE FROM chamados WHERE id = ?", (chamado_id,))
     db.commit()
     return jsonify({"ok": True})
+
+
+# ---------- Relatórios ----------
+
+@app.route("/relatorios")
+@login_required
+def relatorios():
+    db = get_db()
+
+    sumario = dict(db.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status = 'resolvido' THEN 1 ELSE 0 END) AS resolvidos,
+            SUM(CASE WHEN status != 'resolvido' THEN 1 ELSE 0 END) AS ativos,
+            SUM(CASE WHEN prioridade = 'alta' AND status != 'resolvido' THEN 1 ELSE 0 END) AS alta_pendente
+        FROM chamados
+    """).fetchone())
+    sumario["pct_resolvidos"] = round(
+        (sumario["resolvidos"] / sumario["total"] * 100) if sumario["total"] else 0
+    )
+
+    mttr_row = db.execute(
+        """SELECT ROUND(AVG((julianday(resolvido_em) - julianday(criado_em)) * 24), 1) AS mttr
+           FROM chamados WHERE status = 'resolvido' AND resolvido_em IS NOT NULL"""
+    ).fetchone()
+    sumario["mttr"] = mttr_row["mttr"] or 0
+
+    sla_row = db.execute(
+        """SELECT COUNT(*) AS total,
+                  COALESCE(SUM(CASE WHEN (julianday(resolvido_em)-julianday(criado_em))*24 <= sla_horas
+                               THEN 1 ELSE 0 END), 0) AS dentro
+           FROM chamados WHERE status = 'resolvido' AND resolvido_em IS NOT NULL"""
+    ).fetchone()
+    sumario["taxa_sla"] = round(
+        (sla_row["dentro"] / sla_row["total"] * 100) if sla_row["total"] else 0
+    )
+
+    # Por status
+    status_rows = db.execute(
+        "SELECT status, COUNT(*) AS n FROM chamados GROUP BY status"
+    ).fetchall()
+    status_map = {r["status"]: r["n"] for r in status_rows}
+    chart_status = {
+        "labels": ["Aberto", "Em andamento", "Aguardando", "Resolvido"],
+        "data": [status_map.get(s, 0) for s in ("aberto", "andamento", "aguardando", "resolvido")],
+        "colors": ["#5b8def", "#d9a441", "#b07de0", "#4caf7d"],
+    }
+
+    # Por prioridade
+    prio_rows = db.execute(
+        "SELECT prioridade, COUNT(*) AS n FROM chamados GROUP BY prioridade"
+    ).fetchall()
+    prio_map = {r["prioridade"]: r["n"] for r in prio_rows}
+    chart_prioridade = {
+        "labels": ["Alta", "Média", "Baixa"],
+        "data": [prio_map.get(p, 0) for p in ("alta", "media", "baixa")],
+        "colors": ["rgba(217,83,79,0.8)", "rgba(217,164,65,0.8)", "rgba(76,175,125,0.8)"],
+    }
+
+    # Evolução 30 dias
+    hoje = date.today()
+    dias_date = [hoje - timedelta(days=i) for i in range(29, -1, -1)]
+    dias_str = [d.strftime("%Y-%m-%d") for d in dias_date]
+
+    abertos_rows = db.execute(
+        """SELECT DATE(criado_em) AS dia, COUNT(*) AS n FROM chamados
+           WHERE DATE(criado_em) >= ? GROUP BY DATE(criado_em)""",
+        (dias_str[0],),
+    ).fetchall()
+    resolvidos_rows = db.execute(
+        """SELECT DATE(resolvido_em) AS dia, COUNT(*) AS n FROM chamados
+           WHERE resolvido_em IS NOT NULL AND DATE(resolvido_em) >= ?
+           GROUP BY DATE(resolvido_em)""",
+        (dias_str[0],),
+    ).fetchall()
+    abertos_map = {r["dia"]: r["n"] for r in abertos_rows}
+    resolvidos_map = {r["dia"]: r["n"] for r in resolvidos_rows}
+    chart_evolucao = {
+        "labels": [d.strftime("%d/%m") for d in dias_date],
+        "abertos": [abertos_map.get(d, 0) for d in dias_str],
+        "resolvidos": [resolvidos_map.get(d, 0) for d in dias_str],
+    }
+
+    # Por setor
+    setor_rows = db.execute(
+        """SELECT COALESCE(s.nome, 'Sem setor') AS setor, COUNT(*) AS n
+           FROM chamados c LEFT JOIN setores s ON s.id = c.setor_id
+           GROUP BY c.setor_id ORDER BY n DESC LIMIT 8"""
+    ).fetchall()
+    chart_setor = {
+        "labels": [r["setor"] for r in setor_rows],
+        "data": [r["n"] for r in setor_rows],
+    }
+
+    # Por atendente
+    atendente_rows = db.execute(
+        """SELECT COALESCE(u.nome, 'Não atribuído') AS nome,
+                  SUM(CASE WHEN c.status != 'resolvido' THEN 1 ELSE 0 END) AS ativos,
+                  SUM(CASE WHEN c.status = 'resolvido' THEN 1 ELSE 0 END) AS resolvidos_n
+           FROM chamados c LEFT JOIN usuarios u ON u.id = c.atribuido_a
+           GROUP BY c.atribuido_a ORDER BY ativos DESC"""
+    ).fetchall()
+    chart_atendente = {
+        "labels": [r["nome"] for r in atendente_rows],
+        "ativos": [r["ativos"] for r in atendente_rows],
+        "resolvidos": [r["resolvidos_n"] for r in atendente_rows],
+    }
+
+    # MTTR por prioridade
+    mttr_p_rows = db.execute(
+        """SELECT prioridade,
+                  ROUND(AVG((julianday(resolvido_em)-julianday(criado_em))*24), 1) AS mttr
+           FROM chamados WHERE status = 'resolvido' AND resolvido_em IS NOT NULL
+           GROUP BY prioridade"""
+    ).fetchall()
+    mttr_map = {r["prioridade"]: (r["mttr"] or 0) for r in mttr_p_rows}
+    chart_mttr = {
+        "labels": ["Alta", "Média", "Baixa"],
+        "data": [mttr_map.get(p, 0) for p in ("alta", "media", "baixa")],
+        "colors": ["rgba(217,83,79,0.8)", "rgba(217,164,65,0.8)", "rgba(76,175,125,0.8)"],
+    }
+
+    return render_template(
+        "relatorios.html",
+        sumario=sumario,
+        chart_status=chart_status,
+        chart_prioridade=chart_prioridade,
+        chart_evolucao=chart_evolucao,
+        chart_setor=chart_setor,
+        chart_atendente=chart_atendente,
+        chart_mttr=chart_mttr,
+        usuario_nome=session.get("nome"),
+        usuario_papel=session.get("papel"),
+        usuario_iniciais=iniciais(session.get("nome", "?")),
+    )
 
 
 # ---------- Usuários ----------

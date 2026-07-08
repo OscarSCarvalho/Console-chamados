@@ -20,6 +20,7 @@
       {% if usuario_papel == 'admin' %}
       <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Usuários">&#128101;</a>
       {% endif %}
+      <a class="icon-btn" href="{{ url_for('relatorios') }}" title="Relatórios">&#128202;</a>
       <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
       <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
       <div class="user-chip">
