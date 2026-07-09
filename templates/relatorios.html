@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Relatórios — Console de Chamados</title>
+<title>Relatórios — Hub Servisdesk</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -13,7 +13,7 @@
     <div class="brand">
       <div class="brand-mark">A</div>
       <div>
-        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-text">Hub Servisdesk</div>
         <div class="brand-sub">Athos Tecnologia · Uso interno</div>
       </div>
     </div>
@@ -63,7 +63,7 @@
       <div class="kpi-label">SLA cumprido</div>
       <div class="kpi-value">{{ sumario.taxa_sla }}<small>%</small>
         {% if sumario.alta_pendente > 0 %}
-        <span style="font-size:12px; color:#ef8b88; margin-left:6px;">{{ sumario.alta_pendente }} alta pendente</span>
+        <span style="font-size:12px; color:#ff8099; margin-left:6px;">{{ sumario.alta_pendente }} alta pendente</span>
         {% endif %}
       </div>
     </div>
@@ -128,13 +128,13 @@
   </div>
 
   <script>
-  // Tema global Chart.js
+  // Tema global Chart.js — ATHOS cyberpunk palette
   Chart.defaults.color = '#9aa5bd';
-  Chart.defaults.borderColor = 'rgba(38,50,82,0.6)';
-  Chart.defaults.font.family = "'Inter', 'Segoe UI', sans-serif";
-  Chart.defaults.font.size = 12;
+  Chart.defaults.borderColor = 'rgba(42,42,58,0.6)';
+  Chart.defaults.font.family = "'Share Tech Mono', monospace";
+  Chart.defaults.font.size = 11;
 
-  const GRID = { color: 'rgba(38,50,82,0.6)' };
+  const GRID = { color: 'rgba(42,42,58,0.7)' };
 
   // ── Status (doughnut) ──────────────────────────────────────────
   new Chart(document.getElementById('chart-status'), {
@@ -145,7 +145,7 @@
         data: {{ chart_status.data | tojson }},
         backgroundColor: {{ chart_status.colors | tojson }},
         borderWidth: 2,
-        borderColor: '#0f1524',
+        borderColor: '#12121a',
         hoverOffset: 6,
       }]
     },
@@ -173,7 +173,7 @@
         label: 'Chamados',
         data: {{ chart_prioridade.data | tojson }},
         backgroundColor: {{ chart_prioridade.colors | tojson }},
-        borderRadius: 6,
+        borderRadius: 2,
         borderSkipped: false,
       }]
     },
@@ -196,26 +196,26 @@
         {
           label: 'Abertos',
           data: {{ chart_evolucao.abertos | tojson }},
-          borderColor: '#5b8def',
-          backgroundColor: 'rgba(91,141,239,0.08)',
+          borderColor: '#00d4ff',
+          backgroundColor: 'rgba(0,212,255,0.07)',
           borderWidth: 2,
           tension: 0.35,
           fill: true,
           pointRadius: 3,
           pointHoverRadius: 5,
-          pointBackgroundColor: '#5b8def',
+          pointBackgroundColor: '#00d4ff',
         },
         {
           label: 'Resolvidos',
           data: {{ chart_evolucao.resolvidos | tojson }},
-          borderColor: '#4caf7d',
-          backgroundColor: 'rgba(76,175,125,0.08)',
+          borderColor: '#00ff88',
+          backgroundColor: 'rgba(0,255,136,0.07)',
           borderWidth: 2,
           tension: 0.35,
           fill: true,
           pointRadius: 3,
           pointHoverRadius: 5,
-          pointBackgroundColor: '#4caf7d',
+          pointBackgroundColor: '#00ff88',
         }
       ]
     },
@@ -240,8 +240,8 @@
       datasets: [{
         label: 'Chamados',
         data: {{ chart_setor.data | tojson }},
-        backgroundColor: 'rgba(176,125,224,0.75)',
-        borderRadius: 6,
+        backgroundColor: 'rgba(255,0,255,0.6)',
+        borderRadius: 2,
         borderSkipped: false,
       }]
     },
@@ -264,7 +264,7 @@
         label: 'Horas',
         data: {{ chart_mttr.data | tojson }},
         backgroundColor: {{ chart_mttr.colors | tojson }},
-        borderRadius: 6,
+        borderRadius: 2,
         borderSkipped: false,
       }]
     },
@@ -293,15 +293,15 @@
         {
           label: 'Ativos',
           data: {{ chart_atendente.ativos | tojson }},
-          backgroundColor: 'rgba(217,164,65,0.75)',
-          borderRadius: 4,
+          backgroundColor: 'rgba(0,255,136,0.7)',
+          borderRadius: 2,
           borderSkipped: false,
         },
         {
           label: 'Resolvidos',
           data: {{ chart_atendente.resolvidos | tojson }},
-          backgroundColor: 'rgba(76,175,125,0.55)',
-          borderRadius: 4,
+          backgroundColor: 'rgba(0,212,255,0.5)',
+          borderRadius: 2,
           borderSkipped: false,
         }
       ]

@@ -4,18 +4,25 @@ Backend Flask + SQLite puro (sem SQLAlchemy), sessão simples para login.
 """
 import csv
 import io
+import os
 import sqlite3
+import uuid
 from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import Flask, g, render_template, request, redirect, url_for, session, jsonify, Response
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 DB_PATH = "console.db"
-STATUS_VALIDOS = ("aberto", "andamento", "aguardando", "resolvido")
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
+EXTENSOES_PERMITIDAS = {"jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx"}
+STATUS_VALIDOS = ("aberto", "andamento", "aguardando", "impedido", "resolvido", "cancelado")
+STATUS_TERMINAIS = frozenset({"resolvido", "cancelado"})
 
 app = Flask(__name__)
 app.secret_key = "troque-esta-chave-em-producao"
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 
 
 # ---------- Banco de dados ----------
@@ -75,7 +82,44 @@ def migrate_db():
             conn.execute("ALTER TABLE usuarios_v2 RENAME TO usuarios")
             conn.execute("PRAGMA foreign_keys = ON")
 
+        # Migração 3: expande CHECK de status em chamados
+        create_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chamados'"
+        ).fetchone()[0]
+        if "'cancelado'" not in create_sql:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("""
+                CREATE TABLE chamados_v2 (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo        TEXT NOT NULL,
+                    descricao     TEXT,
+                    prioridade    TEXT NOT NULL CHECK (prioridade IN ('alta','media','baixa')) DEFAULT 'media',
+                    status        TEXT NOT NULL CHECK (status IN ('aberto','andamento','aguardando','impedido','resolvido','cancelado')) DEFAULT 'aberto',
+                    sla_horas     INTEGER NOT NULL DEFAULT 24,
+                    setor_id      INTEGER REFERENCES setores(id),
+                    atribuido_a   INTEGER REFERENCES usuarios(id),
+                    criado_por    INTEGER REFERENCES usuarios(id),
+                    criado_em     TEXT NOT NULL DEFAULT (datetime('now')),
+                    atualizado_em TEXT NOT NULL DEFAULT (datetime('now')),
+                    resolvido_em  TEXT
+                )
+            """)
+            conn.execute("INSERT INTO chamados_v2 SELECT * FROM chamados")
+            conn.execute("DROP TABLE chamados")
+            conn.execute("ALTER TABLE chamados_v2 RENAME TO chamados")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chamados_status ON chamados(status)")
+            conn.execute("PRAGMA foreign_keys = ON")
+
+        # Migração 4: colunas de anexo nos comentários
+        cols_com = [row[1] for row in conn.execute("PRAGMA table_info(comentarios)").fetchall()]
+        if "anexo" not in cols_com:
+            conn.execute("ALTER TABLE comentarios ADD COLUMN anexo TEXT")
+        if "anexo_nome" not in cols_com:
+            conn.execute("ALTER TABLE comentarios ADD COLUMN anexo_nome TEXT")
+
         conn.commit()
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 migrate_db()
@@ -177,6 +221,8 @@ def cadastro():
 def calcular_sla(chamado):
     if chamado["status"] == "resolvido":
         return {"classe": "sla-ok", "percentual": 100, "rotulo": "Concluído", "detalhe": "dentro do SLA"}
+    if chamado["status"] == "cancelado":
+        return {"classe": "sla-cancel", "percentual": 0, "rotulo": "Cancelado", "detalhe": "—"}
 
     criado_em = datetime.strptime(chamado["criado_em"], "%Y-%m-%d %H:%M:%S")
     prazo = criado_em + timedelta(hours=chamado["sla_horas"])
@@ -272,6 +318,8 @@ def board():
         item["atribuido_iniciais"] = iniciais(item["atribuido_nome"]) if item["atribuido_nome"] else "—"
         colunas[c["status"]].append(item)
 
+    ATIVOS = ("aberto", "andamento", "aguardando", "impedido")
+
     if papel == "solicitante":
         kpis = {
             "total": sum(len(colunas[s]) for s in STATUS_VALIDOS),
@@ -303,13 +351,10 @@ def board():
         )
 
         kpis = {
-            "total_ativos": sum(len(colunas[s]) for s in ("aberto", "andamento", "aguardando")),
+            "total_ativos": sum(len(colunas[s]) for s in ATIVOS),
             "em_andamento": len(colunas["andamento"]),
             "aguardando_setor": len(colunas["aguardando"]),
-            "sla_em_risco": sum(
-                1 for s in ("aberto", "andamento", "aguardando") for item in colunas[s]
-                if item["sla"]["classe"] == "sla-danger"
-            ),
+            "impedido": len(colunas["impedido"]),
             "mttr": mttr,
             "taxa_sla": taxa_sla,
         }
@@ -487,11 +532,23 @@ def detalhe_chamado(chamado_id):
 @login_required
 def adicionar_comentario(chamado_id):
     texto = request.form.get("texto", "").strip()
-    if texto:
+    arquivo = request.files.get("arquivo")
+    anexo_filename = None
+    anexo_nome = None
+
+    if arquivo and arquivo.filename:
+        ext = arquivo.filename.rsplit(".", 1)[-1].lower() if "." in arquivo.filename else ""
+        if ext in EXTENSOES_PERMITIDAS:
+            nome_seguro = secure_filename(arquivo.filename)
+            anexo_filename = f"{uuid.uuid4().hex}.{ext}"
+            arquivo.save(os.path.join(UPLOAD_DIR, anexo_filename))
+            anexo_nome = nome_seguro
+
+    if texto or anexo_filename:
         db = get_db()
         db.execute(
-            "INSERT INTO comentarios (chamado_id, usuario_id, texto) VALUES (?, ?, ?)",
-            (chamado_id, session["usuario_id"], texto),
+            "INSERT INTO comentarios (chamado_id, usuario_id, texto, anexo, anexo_nome) VALUES (?, ?, ?, ?, ?)",
+            (chamado_id, session["usuario_id"], texto, anexo_filename, anexo_nome),
         )
         db.commit()
     return redirect(url_for("detalhe_chamado", chamado_id=chamado_id))
@@ -510,6 +567,9 @@ def atualizar_status(chamado_id):
     atual = db.execute("SELECT status FROM chamados WHERE id = ?", (chamado_id,)).fetchone()
     if atual is None:
         return jsonify({"erro": "chamado não encontrado"}), 404
+
+    if atual["status"] == "cancelado":
+        return jsonify({"erro": "chamado cancelado não pode ser reaberto"}), 400
 
     resolvido_em = "datetime('now')" if novo_status == "resolvido" else "NULL"
     db.execute(
@@ -596,9 +656,9 @@ def relatorios():
     ).fetchall()
     status_map = {r["status"]: r["n"] for r in status_rows}
     chart_status = {
-        "labels": ["Aberto", "Em andamento", "Aguardando", "Resolvido"],
-        "data": [status_map.get(s, 0) for s in ("aberto", "andamento", "aguardando", "resolvido")],
-        "colors": ["#5b8def", "#d9a441", "#b07de0", "#4caf7d"],
+        "labels": ["Aberto", "Em andamento", "Aguardando", "Com impedimento", "Resolvido", "Cancelado"],
+        "data": [status_map.get(s, 0) for s in ("aberto", "andamento", "aguardando", "impedido", "resolvido", "cancelado")],
+        "colors": ["#5b8def", "#00ff88", "#b07de0", "#ff3366", "#00d4ff", "#6b7280"],
     }
 
     prio_rows = db.execute(
@@ -608,7 +668,7 @@ def relatorios():
     chart_prioridade = {
         "labels": ["Alta", "Média", "Baixa"],
         "data": [prio_map.get(p, 0) for p in ("alta", "media", "baixa")],
-        "colors": ["rgba(217,83,79,0.8)", "rgba(217,164,65,0.8)", "rgba(76,175,125,0.8)"],
+        "colors": ["rgba(255,51,102,0.85)", "rgba(245,158,11,0.8)", "rgba(0,255,136,0.8)"],
     }
 
     hoje = date.today()
@@ -667,7 +727,7 @@ def relatorios():
     chart_mttr = {
         "labels": ["Alta", "Média", "Baixa"],
         "data": [mttr_map.get(p, 0) for p in ("alta", "media", "baixa")],
-        "colors": ["rgba(217,83,79,0.8)", "rgba(217,164,65,0.8)", "rgba(76,175,125,0.8)"],
+        "colors": ["rgba(255,51,102,0.85)", "rgba(245,158,11,0.8)", "rgba(0,255,136,0.8)"],
     }
 
     return render_template(

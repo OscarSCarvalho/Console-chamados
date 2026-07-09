@@ -12,7 +12,7 @@
     <div class="brand">
       <div class="brand-mark">A</div>
       <div>
-        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-text">Hub Servisdesk</div>
         <div class="brand-sub">Athos Tecnologia · Uso interno</div>
       </div>
     </div>
@@ -51,7 +51,7 @@
     </div>
     {% if usuario_papel == 'admin' %}
     <div style="flex-shrink:0;">
-      <button class="btn btn-ghost btn-sm" id="btn-excluir" style="color:#ef8b88; border-color:rgba(217,83,79,0.35);">
+      <button class="btn btn-ghost btn-sm" id="btn-excluir" style="color:#ff8099; border-color:rgba(255,51,102,0.3);">
         Excluir chamado
       </button>
     </div>
@@ -76,7 +76,7 @@
         <div class="detail-card-title">Histórico &amp; Comentários</div>
         <div class="timeline">
 
-          {% set STATUS_LABEL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','resolvido':'Resolvido'} %}
+          {% set STATUS_LABEL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','impedido':'Com impedimento','resolvido':'Resolvido','cancelado':'Cancelado'} %}
 
           {% for ev in timeline %}
           <div class="tl-item">
@@ -89,7 +89,20 @@
                   <span class="tl-user">{{ ev.usuario_nome or 'Sistema' }}</span>
                   <span class="tl-time">{{ ev.tempo }}</span>
                 </div>
-                <div class="tl-comment-box">{{ ev.texto }}</div>
+                {% if ev.texto %}<div class="tl-comment-box">{{ ev.texto }}</div>{% endif %}
+                {% if ev.anexo %}
+                {% set ext = ev.anexo.rsplit('.', 1)[-1].lower() %}
+                <div class="tl-attachment">
+                  {% if ext in ['jpg','jpeg','png','gif','webp'] %}
+                    <a href="{{ url_for('static', filename='uploads/' + ev.anexo) }}" target="_blank" rel="noopener" class="attach-img-link">
+                      <img src="{{ url_for('static', filename='uploads/' + ev.anexo) }}" class="attach-thumb" alt="{{ ev.anexo_nome or 'imagem' }}">
+                    </a>
+                  {% endif %}
+                  <a href="{{ url_for('static', filename='uploads/' + ev.anexo) }}" target="_blank" rel="noopener" download="{{ ev.anexo_nome or ev.anexo }}" class="attach-link">
+                    &#128206; {{ ev.anexo_nome or ev.anexo }}
+                  </a>
+                </div>
+                {% endif %}
               </div>
 
             {% else %}
@@ -117,10 +130,21 @@
           <div class="tl-item">
             <div class="tl-icon ti-comment" style="border-color:var(--navy-border);">{{ usuario_iniciais }}</div>
             <div class="tl-body">
-              <form method="post" action="{{ url_for('adicionar_comentario', chamado_id=chamado.id) }}">
-                <textarea class="field-input" name="texto" placeholder="Adicionar um comentário..." required style="min-height:72px; resize:vertical;"></textarea>
+              <form method="post" action="{{ url_for('adicionar_comentario', chamado_id=chamado.id) }}" enctype="multipart/form-data" id="form-comentario">
+                <textarea class="field-input" name="texto" id="comentario-texto" placeholder="Adicionar um comentário..." style="min-height:72px; resize:vertical; margin-bottom:0;"></textarea>
+
+                <!-- Zona de anexo -->
+                <div class="attach-zone" id="attach-zone">
+                  <input type="file" id="attach-input" name="arquivo" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx" style="display:none;">
+                  <label for="attach-input" class="attach-btn" title="Anexar arquivo (máx. 10 MB)">
+                    &#128206; Anexar
+                  </label>
+                  <span class="attach-filename" id="attach-filename"></span>
+                  <button type="button" class="attach-clear" id="attach-clear" title="Remover anexo" style="display:none;">&#215;</button>
+                </div>
+
                 <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-                  <button type="submit" class="btn btn-primary btn-sm">Comentar</button>
+                  <button type="submit" class="btn btn-primary btn-sm" id="btn-comentar">Comentar</button>
                 </div>
               </form>
             </div>
@@ -135,14 +159,21 @@
 
       <div class="detail-card">
         <div class="detail-card-title">Status</div>
+        {% if chamado.status == 'cancelado' %}
+          <div class="badge s-cancelado" style="margin-bottom:10px;">Cancelado — estado final</div>
+          <p style="font-size:11px; color:var(--text-low); font-family:var(--font-label); line-height:1.5;">
+            Chamados cancelados não podem ser reabertos.
+          </p>
+        {% else %}
         <select class="field-input" id="sel-status" style="margin-top:0;">
-          {% for s, label in [('aberto','Aberto'),('andamento','Em andamento'),('aguardando','Aguardando setor'),('resolvido','Resolvido')] %}
+          {% for s, label in [('aberto','Aberto'),('andamento','Em andamento'),('aguardando','Aguardando setor'),('impedido','Com impedimento'),('resolvido','Resolvido'),('cancelado','Cancelado')] %}
           <option value="{{ s }}" {% if chamado.status == s %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
         <button class="btn btn-ghost btn-sm" id="btn-salvar-status" style="margin-top:10px; width:100%; justify-content:center;">
           Salvar status
         </button>
+        {% endif %}
       </div>
 
       <div class="detail-card">
@@ -198,7 +229,7 @@
         {% if chamado.resolvido_em %}
         <div class="meta-row">
           <span class="meta-label">Resolvido em</span>
-          <span class="meta-value" style="font-size:11px; color:#7fd4a6;">{{ chamado.resolvido_em }}</span>
+          <span class="meta-value" style="font-size:11px; color:var(--ok);">{{ chamado.resolvido_em }}</span>
         </div>
         {% endif %}
       </div>
@@ -236,6 +267,43 @@
       if (resp.ok) window.location.href = "{{ url_for('board') }}";
     });
     {% endif %}
+
+    // ── Anexo: preview e validação ──
+    const attachInput  = document.getElementById("attach-input");
+    const attachName   = document.getElementById("attach-filename");
+    const attachClear  = document.getElementById("attach-clear");
+    const formComent   = document.getElementById("form-comentario");
+    const textoArea    = document.getElementById("comentario-texto");
+
+    attachInput?.addEventListener("change", () => {
+      const f = attachInput.files[0];
+      if (!f) return;
+      const MAX = 10 * 1024 * 1024;
+      if (f.size > MAX) {
+        alert("Arquivo muito grande. O limite é 10 MB.");
+        attachInput.value = "";
+        return;
+      }
+      attachName.textContent = f.name;
+      attachClear.style.display = "inline-flex";
+    });
+
+    attachClear?.addEventListener("click", () => {
+      attachInput.value = "";
+      attachName.textContent = "";
+      attachClear.style.display = "none";
+    });
+
+    formComent?.addEventListener("submit", (e) => {
+      const temTexto  = textoArea.value.trim().length > 0;
+      const temAnexo  = attachInput.files.length > 0;
+      if (!temTexto && !temAnexo) {
+        e.preventDefault();
+        textoArea.focus();
+        textoArea.style.borderColor = "var(--danger)";
+        setTimeout(() => { textoArea.style.borderColor = ""; }, 2000);
+      }
+    });
   </script>
 </body>
 </html>

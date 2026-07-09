@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Console de Chamados — Athos Tecnologia</title>
+<title>Hub Servisdesk — Athos Tecnologia</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -12,7 +12,7 @@
     <div class="brand">
       <div class="brand-mark">A</div>
       <div>
-        <div class="brand-text">Console de Chamados</div>
+        <div class="brand-text">Hub Servisdesk</div>
         <div class="brand-sub">Athos Tecnologia · Uso interno</div>
       </div>
     </div>
@@ -89,8 +89,8 @@
       <div class="kpi-value">{{ kpis.aguardando_setor }} <small>tickets</small></div>
     </div>
     <div class="kpi-card k-atraso">
-      <div class="kpi-label">SLA em risco</div>
-      <div class="kpi-value">{{ kpis.sla_em_risco }} <small>chamados</small></div>
+      <div class="kpi-label">Com impedimento</div>
+      <div class="kpi-value">{{ kpis.impedido }} <small>chamados</small></div>
     </div>
     <div class="kpi-card k-mttr">
       <div class="kpi-label">MTTR (30 dias)</div>
@@ -104,7 +104,7 @@
   {% endif %}
 
   <div class="board">
-    {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando setor', 'resolvido': 'Resolvido'} %}
+    {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando setor', 'impedido': 'Com impedimento', 'resolvido': 'Resolvido', 'cancelado': 'Cancelado'} %}
     {% for status, titulo_coluna in nomes_coluna.items() %}
     <div class="column col-{{ status }}" data-status="{{ status }}">
       <div class="column-head">
