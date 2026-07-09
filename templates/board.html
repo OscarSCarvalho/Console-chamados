@@ -18,10 +18,17 @@
     </div>
     <div class="topbar-right">
       {% if usuario_papel == 'admin' %}
-      <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Gerenciar usuários">&#128101;</a>
+      <div class="notif-wrap">
+        <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Gerenciar usuários">&#128101;</a>
+        {% if pendentes_count > 0 %}
+        <span class="notif-dot">{{ pendentes_count }}</span>
+        {% endif %}
+      </div>
       {% endif %}
+      {% if usuario_papel != 'solicitante' %}
       <a class="icon-btn" href="{{ url_for('relatorios') }}" title="Relatórios">&#128202;</a>
       <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      {% endif %}
       <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
       <div class="user-chip">
         <div class="avatar">{{ usuario_iniciais }}</div>
@@ -35,14 +42,39 @@
 
   <div class="page-header">
     <div>
+      {% if usuario_papel == 'solicitante' %}
+      <div class="page-title">Meus <span>Chamados</span></div>
+      <div class="page-meta">Acompanhe o status dos seus tickets abertos</div>
+      {% else %}
       <div class="page-title">Painel de <span>Chamados</span></div>
       <div class="page-meta">Acompanhamento de tickets por status e SLA</div>
+      {% endif %}
     </div>
     <div class="header-actions">
       <button class="btn btn-primary" id="btn-novo-chamado">+ Novo chamado</button>
     </div>
   </div>
 
+  {% if usuario_papel == 'solicitante' %}
+  <div class="kpi-row kpi-row-4">
+    <div class="kpi-card k-total">
+      <div class="kpi-label">Total</div>
+      <div class="kpi-value">{{ kpis.total }} <small>chamados</small></div>
+    </div>
+    <div class="kpi-card k-andamento">
+      <div class="kpi-label">Em aberto</div>
+      <div class="kpi-value">{{ kpis.abertos }} <small>tickets</small></div>
+    </div>
+    <div class="kpi-card k-aguardando">
+      <div class="kpi-label">Em andamento</div>
+      <div class="kpi-value">{{ kpis.em_andamento }} <small>tickets</small></div>
+    </div>
+    <div class="kpi-card k-taxa">
+      <div class="kpi-label">Resolvidos</div>
+      <div class="kpi-value">{{ kpis.resolvidos }} <small>tickets</small></div>
+    </div>
+  </div>
+  {% else %}
   <div class="kpi-row">
     <div class="kpi-card k-total">
       <div class="kpi-label">Total ativos</div>
@@ -69,6 +101,7 @@
       <div class="kpi-value">{{ kpis.taxa_sla }} <small>%</small></div>
     </div>
   </div>
+  {% endif %}
 
   <div class="board">
     {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando setor', 'resolvido': 'Resolvido'} %}
@@ -80,7 +113,7 @@
       </div>
       <div class="column-body" data-status="{{ status }}">
         {% for c in colunas[status] %}
-        <div class="card" draggable="true" data-id="{{ c.id }}">
+        <div class="card" {% if usuario_papel != 'solicitante' %}draggable="true"{% endif %} data-id="{{ c.id }}">
           <div class="card-top">
             <span class="card-id">#{{ '%04d'|format(c.id) }}</span>
             <span class="card-priority p-{{ c.prioridade }}">
@@ -134,6 +167,7 @@
               <option value="baixa">Baixa (SLA 48h)</option>
             </select>
           </div>
+          {% if usuario_papel != 'solicitante' %}
           <div>
             <label class="field-label">Setor</label>
             <select class="field-input" name="setor_id">
@@ -143,6 +177,7 @@
               {% endfor %}
             </select>
           </div>
+          {% endif %}
         </div>
 
         <div class="modal-actions">
@@ -153,6 +188,9 @@
     </div>
   </div>
 
+  <script>
+    window.USUARIO_PAPEL = "{{ usuario_papel }}";
+  </script>
   <script src="{{ url_for('static', filename='js/board.js') }}"></script>
 </body>
 </html>

@@ -33,7 +33,7 @@
   <div class="page-header">
     <div>
       <div class="page-title">Gestão de <span>Usuários</span></div>
-      <div class="page-meta">Administração de contas de atendentes e administradores</div>
+      <div class="page-meta">Administração de contas, aprovações e permissões</div>
     </div>
     <div class="header-actions">
       <a class="btn btn-ghost" href="{{ url_for('board') }}">&#8592; Board</a>
@@ -41,13 +41,46 @@
     </div>
   </div>
 
-  <div class="users-table-wrap">
+  <!-- Aprovações pendentes -->
+  {% if pendentes %}
+  <div class="pendentes-section">
+    <div class="pendentes-title">
+      &#9888; Aguardando aprovação <span style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">{{ pendentes|length }}</span>
+    </div>
+    <div class="pendentes-list">
+      {% for u in pendentes %}
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; background:var(--navy-800); border:1px solid var(--navy-border); border-radius:8px;" id="pendente-row-{{ u.id }}">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <div class="avatar" style="width:30px;height:30px;font-size:11px;flex-shrink:0;">{{ u.iniciais_u }}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13px;">{{ u.nome }}</div>
+            <div style="font-size:12px; color:var(--text-mid);">{{ u.email }}</div>
+          </div>
+        </div>
+        <div style="flex-shrink:0; font-size:12px; color:var(--text-mid); padding:0 12px;">
+          {{ u.setor or '—' }}
+        </div>
+        <div style="flex-shrink:0; font-size:11px; color:var(--text-low);">
+          {{ u.criado_em[:10] }}
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button class="btn btn-primary btn-sm" onclick="aprovarUsuario({{ u.id }})">Aprovar</button>
+          <button class="btn btn-ghost btn-sm btn-danger" onclick="rejeitarUsuario({{ u.id }})">Rejeitar</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="users-table-wrap" {% if not pendentes %}style="padding-top:20px;"{% endif %}>
     {% if usuarios %}
     <table class="data-table">
       <thead>
         <tr>
           <th>Usuário</th>
           <th>E-mail</th>
+          <th>Setor</th>
           <th>Papel</th>
           <th style="text-align:center;">Chamados ativos</th>
           <th>Status</th>
@@ -64,8 +97,11 @@
             </div>
           </td>
           <td style="color:var(--text-mid); font-size:12.5px;">{{ u.email }}</td>
+          <td style="color:var(--text-mid); font-size:12.5px;">{{ u.setor or '—' }}</td>
           <td>
-            <span class="badge papel-{{ u.papel }}">{{ 'Admin' if u.papel == 'admin' else 'Atendente' }}</span>
+            <span class="badge papel-{{ u.papel }}">
+              {{ {'admin': 'Admin', 'atendente': 'Atendente', 'solicitante': 'Solicitante'}[u.papel] }}
+            </span>
           </td>
           <td style="text-align:center; color:{% if u.chamados_ativos > 0 %}var(--amber-soft){% else %}var(--text-low){% endif %}; font-family:var(--font-display); font-size:16px;">
             {{ u.chamados_ativos }}
@@ -81,6 +117,7 @@
                       data-id="{{ u.id }}"
                       data-nome="{{ u.nome | e }}"
                       data-papel="{{ u.papel }}"
+                      data-setor="{{ u.setor or '' }}"
                       onclick="abrirEdicao(this)">
                 Editar
               </button>
@@ -113,11 +150,15 @@
         <label class="field-label">E-mail</label>
         <input class="field-input" type="email" name="email" required placeholder="ana@athos.com.br">
 
+        <label class="field-label">Setor / Departamento</label>
+        <input class="field-input" type="text" name="setor" placeholder="Ex: TI, RH, Suporte…">
+
         <label class="field-label">Senha inicial</label>
         <input class="field-input" type="password" name="senha" required placeholder="Mínimo 6 caracteres">
 
         <label class="field-label">Papel</label>
         <select class="field-input" name="papel">
+          <option value="solicitante">Solicitante</option>
           <option value="atendente">Atendente</option>
           <option value="admin">Admin</option>
         </select>
@@ -138,8 +179,12 @@
         <label class="field-label">Nome completo</label>
         <input class="field-input" type="text" name="nome" id="edit-nome" required>
 
+        <label class="field-label">Setor / Departamento</label>
+        <input class="field-input" type="text" name="setor" id="edit-setor" placeholder="Ex: TI, RH, Suporte…">
+
         <label class="field-label">Papel</label>
         <select class="field-input" name="papel" id="edit-papel">
+          <option value="solicitante">Solicitante</option>
           <option value="atendente">Atendente</option>
           <option value="admin">Admin</option>
         </select>
@@ -171,6 +216,7 @@
     function abrirEdicao(btn) {
       document.getElementById("edit-nome").value = btn.dataset.nome;
       document.getElementById("edit-papel").value = btn.dataset.papel;
+      document.getElementById("edit-setor").value = btn.dataset.setor;
       document.getElementById("form-editar-usuario").action = `/usuarios/${btn.dataset.id}/editar`;
       document.querySelector("#form-editar-usuario input[type=password]").value = "";
       document.getElementById("modal-editar-usuario").classList.add("open");
@@ -190,6 +236,28 @@
       btn.textContent = novoAtivo ? "Desativar" : "Ativar";
       btn.setAttribute("onclick", `toggleUsuario(${id}, ${novoAtivo})`);
       row.style.opacity = novoAtivo ? "1" : "0.55";
+    }
+
+    async function aprovarUsuario(id) {
+      const resp = await fetch(`/usuarios/${id}/toggle`, { method: "POST" });
+      if (!resp.ok) { alert("Erro ao aprovar."); return; }
+      document.getElementById(`pendente-row-${id}`).remove();
+      // Remove seção se vazia
+      const lista = document.querySelector(".pendentes-list");
+      if (lista && !lista.children.length) {
+        document.querySelector(".pendentes-section").remove();
+      }
+    }
+
+    async function rejeitarUsuario(id) {
+      if (!confirm("Tem certeza que deseja rejeitar e remover este cadastro?")) return;
+      const resp = await fetch(`/usuarios/${id}`, { method: "DELETE" });
+      if (!resp.ok) { alert("Erro ao rejeitar."); return; }
+      document.getElementById(`pendente-row-${id}`).remove();
+      const lista = document.querySelector(".pendentes-list");
+      if (lista && !lista.children.length) {
+        document.querySelector(".pendentes-section").remove();
+      }
     }
   </script>
 </body>

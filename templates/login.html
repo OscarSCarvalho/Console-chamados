@@ -31,8 +31,9 @@
         <button class="btn btn-primary btn-block" type="submit">Entrar</button>
       </form>
 
-      <div class="login-hint">
-        Acesso restrito à equipe interna (atendentes e administradores).
+      <div class="login-hint" style="text-align:center;">
+        Primeiro acesso?
+        <a href="{{ url_for('cadastro') }}" style="color:var(--amber); text-decoration:none;">Cadastre-se aqui</a>
       </div>
     </div>
   </div>

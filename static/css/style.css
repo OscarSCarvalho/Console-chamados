@@ -55,7 +55,36 @@ body{
   background: rgba(217,83,79,0.12); border:1px solid rgba(217,83,79,0.4); color:#ef8b88;
   border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:16px;
 }
+.login-success{
+  background: rgba(76,175,125,0.1); border:1px solid rgba(76,175,125,0.35); color:#7fd4a6;
+  border-radius:8px; padding:16px 14px; font-size:13px; margin-bottom:16px; text-align:center;
+}
 .login-hint{ margin-top:18px; font-size:11.5px; color: var(--text-low); line-height:1.5; }
+
+/* Notificação no ícone de usuários */
+.notif-wrap{ position:relative; }
+.notif-dot{
+  position:absolute; top:-5px; right:-5px;
+  background: var(--danger); color:#fff;
+  width:16px; height:16px; border-radius:50%;
+  font-size:9px; font-weight:700; line-height:16px; text-align:center;
+  pointer-events:none;
+}
+
+/* KPIs para solicitante (4 colunas) */
+.kpi-row-4{ grid-template-columns: repeat(4, 1fr); }
+
+/* Seção pendentes */
+.pendentes-section{
+  margin: 0 28px 0 28px; padding:16px 20px;
+  background: rgba(217,164,65,0.06); border:1px solid rgba(217,164,65,0.25);
+  border-radius:10px;
+}
+.pendentes-title{
+  font-family: var(--font-display); font-size:13.5px; font-weight:700;
+  color: var(--amber-soft); margin-bottom:12px; display:flex; align-items:center; gap:8px;
+}
+.pendentes-list{ display:flex; flex-direction:column; gap:8px; }
 
 /* ===== TOPBAR ===== */
 .topbar{
@@ -325,8 +354,10 @@ textarea.field-input{ resize:vertical; min-height:70px; font-family: var(--font-
 
 .papel-admin{ background:rgba(217,164,65,0.15); color:var(--amber-soft); }
 .papel-atendente{ background:rgba(91,141,239,0.15); color:#7fa8f0; }
+.papel-solicitante{ background:rgba(176,125,224,0.15); color:#c9a1ec; }
 .badge-ativo{ background:rgba(76,175,125,0.15); color:#7fd4a6; }
 .badge-inativo{ background:rgba(100,100,100,0.12); color:var(--text-low); }
+.badge-pendente{ background:rgba(217,164,65,0.15); color:var(--amber-soft); }
 
 .btn-sm{ font-size:12px; padding:5px 11px; border-radius:6px; }
 .btn-danger{ background:rgba(217,83,79,0.1); border-color:rgba(217,83,79,0.3); color:#ef8b88; }

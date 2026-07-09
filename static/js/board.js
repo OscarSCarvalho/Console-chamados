@@ -7,17 +7,21 @@ document.addEventListener("DOMContentLoaded", () => {
   let cardArrastado = null;
   let arrastando = false;
 
+  const podeMover = window.USUARIO_PAPEL !== "solicitante";
+
   cards.forEach((card) => {
-    card.addEventListener("dragstart", () => {
-      cardArrastado = card;
-      arrastando = true;
-      card.classList.add("dragging");
-    });
-    card.addEventListener("dragend", () => {
-      card.classList.remove("dragging");
-      cardArrastado = null;
-      setTimeout(() => { arrastando = false; }, 50);
-    });
+    if (podeMover) {
+      card.addEventListener("dragstart", () => {
+        cardArrastado = card;
+        arrastando = true;
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        cardArrastado = null;
+        setTimeout(() => { arrastando = false; }, 50);
+      });
+    }
     card.addEventListener("click", () => {
       if (!arrastando) {
         window.location.href = `/chamados/${card.dataset.id}`;
@@ -27,6 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   columnBodies.forEach((body) => {
     const coluna = body.closest(".column");
+
+    if (!podeMover) return;
 
     body.addEventListener("dragover", (e) => {
       e.preventDefault();

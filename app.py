@@ -35,8 +35,9 @@ def close_db(exception=None):
 
 
 def migrate_db():
-    """Cria tabelas novas em banco existente sem apagar dados."""
+    """Cria/atualiza tabelas sem apagar dados existentes."""
     with sqlite3.connect(DB_PATH) as conn:
+        # Migração 1: tabela comentarios
         conn.execute("""
             CREATE TABLE IF NOT EXISTS comentarios (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +50,31 @@ def migrate_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_comentarios_chamado ON comentarios(chamado_id)"
         )
+
+        # Migração 2: adiciona coluna setor + papel solicitante
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(usuarios)").fetchall()]
+        if "setor" not in cols:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("""
+                CREATE TABLE usuarios_v2 (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome        TEXT NOT NULL,
+                    email       TEXT NOT NULL UNIQUE,
+                    senha_hash  TEXT NOT NULL,
+                    papel       TEXT NOT NULL CHECK (papel IN ('solicitante', 'atendente', 'admin')) DEFAULT 'atendente',
+                    setor       TEXT,
+                    ativo       INTEGER NOT NULL DEFAULT 1,
+                    criado_em   TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                INSERT INTO usuarios_v2 (id, nome, email, senha_hash, papel, ativo, criado_em)
+                SELECT id, nome, email, senha_hash, papel, ativo, criado_em FROM usuarios
+            """)
+            conn.execute("DROP TABLE usuarios")
+            conn.execute("ALTER TABLE usuarios_v2 RENAME TO usuarios")
+            conn.execute("PRAGMA foreign_keys = ON")
+
         conn.commit()
 
 
@@ -96,6 +122,12 @@ def login():
             session["nome"] = usuario["nome"]
             session["papel"] = usuario["papel"]
             return redirect(url_for("board"))
+        # Verifica se está pendente de aprovação
+        pendente = db.execute(
+            "SELECT id FROM usuarios WHERE email = ? AND ativo = 0 AND papel = 'solicitante'", (email,)
+        ).fetchone()
+        if pendente:
+            return render_template("login.html", erro="Seu cadastro ainda está aguardando aprovação do administrador.")
         return render_template("login.html", erro="E-mail ou senha inválidos.")
     return render_template("login.html", erro=None)
 
@@ -104,6 +136,40 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    if session.get("usuario_id"):
+        return redirect(url_for("board"))
+
+    if request.method == "POST":
+        nome  = request.form.get("nome", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        senha = request.form.get("senha", "")
+        conf  = request.form.get("confirmar_senha", "")
+        setor = request.form.get("setor", "").strip()
+
+        if not all([nome, email, senha, conf, setor]):
+            return render_template("cadastro.html", erro="Preencha todos os campos.")
+        if len(senha) < 6:
+            return render_template("cadastro.html", erro="A senha deve ter ao menos 6 caracteres.")
+        if senha != conf:
+            return render_template("cadastro.html", erro="As senhas não coincidem.")
+
+        db = get_db()
+        try:
+            db.execute(
+                "INSERT INTO usuarios (nome, email, senha_hash, papel, setor, ativo) VALUES (?, ?, ?, 'solicitante', ?, 0)",
+                (nome, email, generate_password_hash(senha), setor),
+            )
+            db.commit()
+        except sqlite3.IntegrityError:
+            return render_template("cadastro.html", erro="Este e-mail já está cadastrado.")
+
+        return render_template("cadastro.html", sucesso=True)
+
+    return render_template("cadastro.html", erro=None)
 
 
 # ---------- SLA helpers ----------
@@ -176,13 +242,27 @@ def iniciais(nome):
 @login_required
 def board():
     db = get_db()
-    chamados_raw = db.execute(
-        """SELECT c.*, s.nome AS setor_nome, u.nome AS atribuido_nome
-           FROM chamados c
-           LEFT JOIN setores s ON s.id = c.setor_id
-           LEFT JOIN usuarios u ON u.id = c.atribuido_a
-           ORDER BY c.criado_em DESC"""
-    ).fetchall()
+    papel = session.get("papel")
+    uid   = session.get("usuario_id")
+
+    if papel == "solicitante":
+        chamados_raw = db.execute(
+            """SELECT c.*, s.nome AS setor_nome, u.nome AS atribuido_nome
+               FROM chamados c
+               LEFT JOIN setores s ON s.id = c.setor_id
+               LEFT JOIN usuarios u ON u.id = c.atribuido_a
+               WHERE c.criado_por = ?
+               ORDER BY c.criado_em DESC""",
+            (uid,),
+        ).fetchall()
+    else:
+        chamados_raw = db.execute(
+            """SELECT c.*, s.nome AS setor_nome, u.nome AS atribuido_nome
+               FROM chamados c
+               LEFT JOIN setores s ON s.id = c.setor_id
+               LEFT JOIN usuarios u ON u.id = c.atribuido_a
+               ORDER BY c.criado_em DESC"""
+        ).fetchall()
 
     colunas = {status: [] for status in STATUS_VALIDOS}
     for c in chamados_raw:
@@ -192,40 +272,56 @@ def board():
         item["atribuido_iniciais"] = iniciais(item["atribuido_nome"]) if item["atribuido_nome"] else "—"
         colunas[c["status"]].append(item)
 
-    mttr_row = db.execute(
-        """SELECT AVG((julianday(resolvido_em) - julianday(criado_em)) * 24) AS mttr
-           FROM chamados
-           WHERE status = 'resolvido' AND resolvido_em IS NOT NULL
-           AND criado_em >= datetime('now', '-30 days')"""
-    ).fetchone()
-    mttr = round(mttr_row["mttr"] or 0, 1)
+    if papel == "solicitante":
+        kpis = {
+            "total": sum(len(colunas[s]) for s in STATUS_VALIDOS),
+            "abertos": len(colunas["aberto"]),
+            "em_andamento": len(colunas["andamento"]),
+            "resolvidos": len(colunas["resolvido"]),
+        }
+        pendentes_count = 0
+    else:
+        mttr_row = db.execute(
+            """SELECT AVG((julianday(resolvido_em) - julianday(criado_em)) * 24) AS mttr
+               FROM chamados
+               WHERE status = 'resolvido' AND resolvido_em IS NOT NULL
+               AND criado_em >= datetime('now', '-30 days')"""
+        ).fetchone()
+        mttr = round(mttr_row["mttr"] or 0, 1)
 
-    sla_stats = db.execute(
-        """SELECT COUNT(*) AS total,
-                  COALESCE(SUM(
-                    CASE WHEN (julianday(resolvido_em) - julianday(criado_em)) * 24 <= sla_horas
-                    THEN 1 ELSE 0 END
-                  ), 0) AS dentro
-           FROM chamados
-           WHERE status = 'resolvido' AND resolvido_em IS NOT NULL"""
-    ).fetchone()
-    taxa_sla = round(
-        (sla_stats["dentro"] / sla_stats["total"] * 100) if sla_stats["total"] else 0
-    )
+        sla_stats = db.execute(
+            """SELECT COUNT(*) AS total,
+                      COALESCE(SUM(
+                        CASE WHEN (julianday(resolvido_em) - julianday(criado_em)) * 24 <= sla_horas
+                        THEN 1 ELSE 0 END
+                      ), 0) AS dentro
+               FROM chamados
+               WHERE status = 'resolvido' AND resolvido_em IS NOT NULL"""
+        ).fetchone()
+        taxa_sla = round(
+            (sla_stats["dentro"] / sla_stats["total"] * 100) if sla_stats["total"] else 0
+        )
 
-    kpis = {
-        "total_ativos": sum(len(colunas[s]) for s in ("aberto", "andamento", "aguardando")),
-        "em_andamento": len(colunas["andamento"]),
-        "aguardando_setor": len(colunas["aguardando"]),
-        "sla_em_risco": sum(
-            1 for s in ("aberto", "andamento", "aguardando") for item in colunas[s]
-            if item["sla"]["classe"] == "sla-danger"
-        ),
-        "mttr": mttr,
-        "taxa_sla": taxa_sla,
-    }
+        kpis = {
+            "total_ativos": sum(len(colunas[s]) for s in ("aberto", "andamento", "aguardando")),
+            "em_andamento": len(colunas["andamento"]),
+            "aguardando_setor": len(colunas["aguardando"]),
+            "sla_em_risco": sum(
+                1 for s in ("aberto", "andamento", "aguardando") for item in colunas[s]
+                if item["sla"]["classe"] == "sla-danger"
+            ),
+            "mttr": mttr,
+            "taxa_sla": taxa_sla,
+        }
 
-    setores = db.execute("SELECT * FROM setores ORDER BY nome").fetchall()
+        pendentes_count = 0
+        if papel == "admin":
+            row = db.execute(
+                "SELECT COUNT(*) AS n FROM usuarios WHERE ativo = 0 AND papel = 'solicitante'"
+            ).fetchone()
+            pendentes_count = row["n"]
+
+    setores  = db.execute("SELECT * FROM setores ORDER BY nome").fetchall()
     usuarios = db.execute("SELECT * FROM usuarios WHERE ativo = 1 ORDER BY nome").fetchall()
 
     return render_template(
@@ -235,8 +331,9 @@ def board():
         setores=setores,
         usuarios=usuarios,
         usuario_nome=session.get("nome"),
-        usuario_papel=session.get("papel"),
+        usuario_papel=papel,
         usuario_iniciais=iniciais(session.get("nome", "?")),
+        pendentes_count=pendentes_count,
     )
 
 
@@ -275,6 +372,8 @@ def sla_padrao_por_prioridade(prioridade):
 @app.route("/chamados/exportar")
 @login_required
 def exportar_csv():
+    if session.get("papel") == "solicitante":
+        return redirect(url_for("board"))
     db = get_db()
     chamados = db.execute(
         """SELECT c.id, c.titulo, c.descricao, c.prioridade, c.status, c.sla_horas,
@@ -315,16 +414,22 @@ def detalhe_chamado(chamado_id):
     chamado = db.execute(
         """SELECT c.*, s.nome AS setor_nome,
                   ua.nome AS atribuido_nome,
-                  uc.nome AS criado_por_nome
+                  uc.nome AS criado_por_nome,
+                  us.setor AS solicitante_setor
            FROM chamados c
            LEFT JOIN setores s ON s.id = c.setor_id
            LEFT JOIN usuarios ua ON ua.id = c.atribuido_a
            LEFT JOIN usuarios uc ON uc.id = c.criado_por
+           LEFT JOIN usuarios us ON us.id = c.criado_por
            WHERE c.id = ?""",
         (chamado_id,),
     ).fetchone()
 
     if chamado is None:
+        return redirect(url_for("board"))
+
+    # Solicitante só pode ver seus próprios chamados
+    if session.get("papel") == "solicitante" and chamado["criado_por"] != session["usuario_id"]:
         return redirect(url_for("board"))
 
     chamado = dict(chamado)
@@ -395,6 +500,8 @@ def adicionar_comentario(chamado_id):
 @app.route("/chamados/<int:chamado_id>/status", methods=["POST"])
 @login_required
 def atualizar_status(chamado_id):
+    if session.get("papel") == "solicitante":
+        return jsonify({"erro": "sem permissão"}), 403
     novo_status = request.json.get("status")
     if novo_status not in STATUS_VALIDOS:
         return jsonify({"erro": "status inválido"}), 400
@@ -423,6 +530,8 @@ def atualizar_status(chamado_id):
 @app.route("/chamados/<int:chamado_id>/atribuir", methods=["POST"])
 @login_required
 def atribuir_chamado(chamado_id):
+    if session.get("papel") == "solicitante":
+        return jsonify({"erro": "sem permissão"}), 403
     usuario_id = request.json.get("usuario_id") or None
     db = get_db()
     db.execute(
@@ -450,6 +559,8 @@ def excluir_chamado(chamado_id):
 @app.route("/relatorios")
 @login_required
 def relatorios():
+    if session.get("papel") == "solicitante":
+        return redirect(url_for("board"))
     db = get_db()
 
     sumario = dict(db.execute("""
@@ -480,7 +591,6 @@ def relatorios():
         (sla_row["dentro"] / sla_row["total"] * 100) if sla_row["total"] else 0
     )
 
-    # Por status
     status_rows = db.execute(
         "SELECT status, COUNT(*) AS n FROM chamados GROUP BY status"
     ).fetchall()
@@ -491,7 +601,6 @@ def relatorios():
         "colors": ["#5b8def", "#d9a441", "#b07de0", "#4caf7d"],
     }
 
-    # Por prioridade
     prio_rows = db.execute(
         "SELECT prioridade, COUNT(*) AS n FROM chamados GROUP BY prioridade"
     ).fetchall()
@@ -502,7 +611,6 @@ def relatorios():
         "colors": ["rgba(217,83,79,0.8)", "rgba(217,164,65,0.8)", "rgba(76,175,125,0.8)"],
     }
 
-    # Evolução 30 dias
     hoje = date.today()
     dias_date = [hoje - timedelta(days=i) for i in range(29, -1, -1)]
     dias_str = [d.strftime("%Y-%m-%d") for d in dias_date]
@@ -526,7 +634,6 @@ def relatorios():
         "resolvidos": [resolvidos_map.get(d, 0) for d in dias_str],
     }
 
-    # Por setor
     setor_rows = db.execute(
         """SELECT COALESCE(s.nome, 'Sem setor') AS setor, COUNT(*) AS n
            FROM chamados c LEFT JOIN setores s ON s.id = c.setor_id
@@ -537,7 +644,6 @@ def relatorios():
         "data": [r["n"] for r in setor_rows],
     }
 
-    # Por atendente
     atendente_rows = db.execute(
         """SELECT COALESCE(u.nome, 'Não atribuído') AS nome,
                   SUM(CASE WHEN c.status != 'resolvido' THEN 1 ELSE 0 END) AS ativos,
@@ -551,7 +657,6 @@ def relatorios():
         "resolvidos": [r["resolvidos_n"] for r in atendente_rows],
     }
 
-    # MTTR por prioridade
     mttr_p_rows = db.execute(
         """SELECT prioridade,
                   ROUND(AVG((julianday(resolvido_em)-julianday(criado_em))*24), 1) AS mttr
@@ -588,13 +693,23 @@ def listar_usuarios():
     if session.get("papel") != "admin":
         return redirect(url_for("board"))
     db = get_db()
+
+    pendentes_raw = db.execute(
+        "SELECT * FROM usuarios WHERE ativo = 0 AND papel = 'solicitante' ORDER BY criado_em DESC"
+    ).fetchall()
+    pendentes = []
+    for u in pendentes_raw:
+        d = dict(u)
+        d["iniciais_u"] = iniciais(u["nome"])
+        pendentes.append(d)
+
     usuarios_raw = db.execute(
-        """SELECT u.*,
-                  COUNT(c.id) AS chamados_ativos
+        """SELECT u.*, COUNT(c.id) AS chamados_ativos
            FROM usuarios u
            LEFT JOIN chamados c ON c.atribuido_a = u.id AND c.status != 'resolvido'
+           WHERE NOT (u.ativo = 0 AND u.papel = 'solicitante')
            GROUP BY u.id
-           ORDER BY u.ativo DESC, u.nome"""
+           ORDER BY u.ativo DESC, u.papel, u.nome"""
     ).fetchall()
 
     usuarios_lista = []
@@ -606,6 +721,7 @@ def listar_usuarios():
     return render_template(
         "usuarios.html",
         usuarios=usuarios_lista,
+        pendentes=pendentes,
         usuario_nome=session.get("nome"),
         usuario_papel=session.get("papel"),
         usuario_iniciais=iniciais(session.get("nome", "?")),
@@ -622,12 +738,13 @@ def criar_usuario():
     db = get_db()
     try:
         db.execute(
-            "INSERT INTO usuarios (nome, email, senha_hash, papel) VALUES (?, ?, ?, ?)",
+            "INSERT INTO usuarios (nome, email, senha_hash, papel, setor) VALUES (?, ?, ?, ?, ?)",
             (
                 dados["nome"].strip(),
                 dados["email"].strip().lower(),
                 generate_password_hash(dados["senha"]),
                 dados.get("papel", "atendente"),
+                dados.get("setor", "").strip() or None,
             ),
         )
         db.commit()
@@ -652,22 +769,42 @@ def toggle_usuario(usuario_id):
     return jsonify({"ok": True})
 
 
+@app.route("/usuarios/<int:usuario_id>", methods=["DELETE"])
+@login_required
+def excluir_usuario(usuario_id):
+    if session.get("papel") != "admin":
+        return jsonify({"erro": "acesso restrito"}), 403
+    db = get_db()
+    # Permite excluir apenas solicitantes pendentes (ativo=0)
+    usuario = db.execute(
+        "SELECT papel, ativo FROM usuarios WHERE id = ?", (usuario_id,)
+    ).fetchone()
+    if usuario is None:
+        return jsonify({"erro": "usuário não encontrado"}), 404
+    if not (usuario["papel"] == "solicitante" and usuario["ativo"] == 0):
+        return jsonify({"erro": "só é possível remover solicitantes pendentes"}), 400
+    db.execute("DELETE FROM usuarios WHERE id = ?", (usuario_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
 @app.route("/usuarios/<int:usuario_id>/editar", methods=["POST"])
 @login_required
 def editar_usuario(usuario_id):
     if session.get("papel") != "admin":
         return jsonify({"erro": "acesso restrito"}), 403
     dados = request.form
+    setor = dados.get("setor", "").strip() or None
     db = get_db()
     if dados.get("senha"):
         db.execute(
-            "UPDATE usuarios SET nome = ?, papel = ?, senha_hash = ? WHERE id = ?",
-            (dados["nome"].strip(), dados["papel"], generate_password_hash(dados["senha"]), usuario_id),
+            "UPDATE usuarios SET nome = ?, papel = ?, senha_hash = ?, setor = ? WHERE id = ?",
+            (dados["nome"].strip(), dados["papel"], generate_password_hash(dados["senha"]), setor, usuario_id),
         )
     else:
         db.execute(
-            "UPDATE usuarios SET nome = ?, papel = ? WHERE id = ?",
-            (dados["nome"].strip(), dados["papel"], usuario_id),
+            "UPDATE usuarios SET nome = ?, papel = ?, setor = ? WHERE id = ?",
+            (dados["nome"].strip(), dados["papel"], setor, usuario_id),
         )
     db.commit()
     return redirect(url_for("listar_usuarios"))

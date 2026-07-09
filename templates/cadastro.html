@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cadastro — Console de Chamados</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card" style="max-width:420px;">
+      <div class="login-brand">
+        <div class="login-mark">A</div>
+        <div>
+          <div class="login-title">Console de Chamados</div>
+          <div class="login-sub">Athos Tecnologia</div>
+        </div>
+      </div>
+
+      {% if sucesso %}
+        <div class="login-success">
+          <div style="font-size:22px; margin-bottom:8px;">&#10003;</div>
+          <div style="font-weight:600; margin-bottom:4px;">Cadastro enviado!</div>
+          <div style="font-size:12.5px; color:var(--text-mid); line-height:1.5;">
+            Seu cadastro está aguardando aprovação do administrador.<br>
+            Você receberá acesso assim que for aprovado.
+          </div>
+        </div>
+        <a class="btn btn-ghost btn-block" href="{{ url_for('login') }}" style="margin-top:8px; text-decoration:none; justify-content:center;">
+          &#8592; Voltar ao login
+        </a>
+      {% else %}
+
+        {% if erro %}
+          <div class="login-error">{{ erro }}</div>
+        {% endif %}
+
+        <form method="post">
+          <label class="field-label">Nome completo</label>
+          <input class="field-input" type="text" name="nome" placeholder="Ex: Maria Silva" required autofocus>
+
+          <label class="field-label">E-mail corporativo</label>
+          <input class="field-input" type="email" name="email" placeholder="maria@empresa.com.br" required>
+
+          <label class="field-label">Setor / Departamento</label>
+          <input class="field-input" type="text" name="setor" placeholder="Ex: Financeiro, RH, Logística…" required>
+
+          <label class="field-label">Senha</label>
+          <input class="field-input" type="password" name="senha" placeholder="Mínimo 6 caracteres" required>
+
+          <label class="field-label">Confirmar senha</label>
+          <input class="field-input" type="password" name="confirmar_senha" placeholder="Repita a senha" required>
+
+          <button class="btn btn-primary btn-block" type="submit">Solicitar acesso</button>
+        </form>
+
+        <div class="login-hint" style="text-align:center; margin-top:16px;">
+          Já tem conta?
+          <a href="{{ url_for('login') }}" style="color:var(--amber); text-decoration:none;">Fazer login</a>
+        </div>
+
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
