@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Usuários — Hub Servisdesk</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -40,6 +41,12 @@
       <button class="btn btn-primary" id="btn-novo-usuario">+ Novo usuário</button>
     </div>
   </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="flash-msg flash-{{ cat }}" style="margin: 12px 28px 0;">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
 
   <!-- Aprovações pendentes -->
   {% if pendentes %}
@@ -144,6 +151,7 @@
     <div class="modal-box">
       <div class="modal-title">Novo usuário</div>
       <form method="post" action="{{ url_for('criar_usuario') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field-label">Nome completo</label>
         <input class="field-input" type="text" name="nome" required placeholder="Ex: Ana Lima">
 
@@ -154,7 +162,7 @@
         <input class="field-input" type="text" name="setor" placeholder="Ex: TI, RH, Suporte…">
 
         <label class="field-label">Senha inicial</label>
-        <input class="field-input" type="password" name="senha" required placeholder="Mínimo 6 caracteres">
+        <input class="field-input" type="password" name="senha" required placeholder="Mínimo 6 caracteres" minlength="6">
 
         <label class="field-label">Papel</label>
         <select class="field-input" name="papel">
@@ -176,6 +184,7 @@
     <div class="modal-box">
       <div class="modal-title">Editar usuário</div>
       <form id="form-editar-usuario" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field-label">Nome completo</label>
         <input class="field-input" type="text" name="nome" id="edit-nome" required>
 
@@ -201,6 +210,8 @@
   </div>
 
   <script>
+    const getCsrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+
     document.getElementById("btn-novo-usuario").addEventListener("click", () => {
       document.getElementById("modal-novo-usuario").classList.add("open");
     });
@@ -223,7 +234,10 @@
     }
 
     async function toggleUsuario(id, ativo) {
-      const resp = await fetch(`/usuarios/${id}/toggle`, { method: "POST" });
+      const resp = await fetch(`/usuarios/${id}/toggle`, {
+        method: "POST",
+        headers: { "X-CSRFToken": getCsrfToken() },
+      });
       if (!resp.ok) { alert("Erro ao alterar status."); return; }
 
       const row = document.getElementById(`user-row-${id}`);
@@ -239,10 +253,12 @@
     }
 
     async function aprovarUsuario(id) {
-      const resp = await fetch(`/usuarios/${id}/toggle`, { method: "POST" });
+      const resp = await fetch(`/usuarios/${id}/toggle`, {
+        method: "POST",
+        headers: { "X-CSRFToken": getCsrfToken() },
+      });
       if (!resp.ok) { alert("Erro ao aprovar."); return; }
       document.getElementById(`pendente-row-${id}`).remove();
-      // Remove seção se vazia
       const lista = document.querySelector(".pendentes-list");
       if (lista && !lista.children.length) {
         document.querySelector(".pendentes-section").remove();
@@ -251,7 +267,10 @@
 
     async function rejeitarUsuario(id) {
       if (!confirm("Tem certeza que deseja rejeitar e remover este cadastro?")) return;
-      const resp = await fetch(`/usuarios/${id}`, { method: "DELETE" });
+      const resp = await fetch(`/usuarios/${id}`, {
+        method: "DELETE",
+        headers: { "X-CSRFToken": getCsrfToken() },
+      });
       if (!resp.ok) { alert("Erro ao rejeitar."); return; }
       document.getElementById(`pendente-row-${id}`).remove();
       const lista = document.querySelector(".pendentes-list");

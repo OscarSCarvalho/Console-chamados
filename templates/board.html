@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Hub Servisdesk — Athos Tecnologia</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -54,6 +55,12 @@
       <button class="btn btn-primary" id="btn-novo-chamado">+ Novo chamado</button>
     </div>
   </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="flash-msg flash-{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
 
   {% if usuario_papel == 'solicitante' %}
   <div class="kpi-row kpi-row-4">
@@ -109,7 +116,7 @@
     <div class="column col-{{ status }}" data-status="{{ status }}">
       <div class="column-head">
         <div class="col-title-wrap"><span class="col-dot"></span><span class="col-title">{{ titulo_coluna }}</span></div>
-        <span class="col-count">{{ colunas[status]|length }}</span>
+        <span class="col-count">{{ colunas[status]|length + colunas_overflow[status] }}</span>
       </div>
       <div class="column-body" data-status="{{ status }}">
         {% for c in colunas[status] %}
@@ -142,6 +149,10 @@
         {% else %}
         <div class="column-empty">Nenhum chamado por aqui.</div>
         {% endfor %}
+
+        {% if colunas_overflow[status] > 0 %}
+        <div class="col-overflow">+ {{ colunas_overflow[status] }} chamado{{ 's' if colunas_overflow[status] > 1 else '' }} não exibido{{ 's' if colunas_overflow[status] > 1 else '' }}</div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
@@ -152,8 +163,9 @@
     <div class="modal-box">
       <div class="modal-title">Novo chamado</div>
       <form method="post" action="{{ url_for('criar_chamado') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field-label">Título</label>
-        <input class="field-input" type="text" name="titulo" placeholder="Resumo do problema" required>
+        <input class="field-input" type="text" name="titulo" placeholder="Resumo do problema" required maxlength="200">
 
         <label class="field-label">Descrição</label>
         <textarea class="field-input" name="descricao" placeholder="Detalhes do chamado"></textarea>

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>#{{ '%04d'|format(chamado.id) }} — {{ chamado.titulo }}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -20,8 +21,10 @@
       {% if usuario_papel == 'admin' %}
       <a class="icon-btn" href="{{ url_for('listar_usuarios') }}" title="Usuários">&#128101;</a>
       {% endif %}
+      {% if usuario_papel != 'solicitante' %}
       <a class="icon-btn" href="{{ url_for('relatorios') }}" title="Relatórios">&#128202;</a>
       <a class="icon-btn" href="{{ url_for('exportar_csv') }}" title="Exportar CSV">&#8595;</a>
+      {% endif %}
       <a class="icon-btn" href="{{ url_for('logout') }}" title="Sair">&#9211;</a>
       <div class="user-chip">
         <div class="avatar">{{ usuario_iniciais }}</div>
@@ -39,11 +42,20 @@
     <span class="breadcrumb-id">#{{ '%04d'|format(chamado.id) }}</span>
   </div>
 
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+    <div class="flash-msg flash-{{ cat }}" style="margin: 8px 28px 0;">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% set STATUS_LABEL_ALL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','impedido':'Com impedimento','resolvido':'Resolvido','cancelado':'Cancelado'} %}
+
   <div class="page-header">
     <div style="flex:1; min-width:0;">
       <div class="page-title" style="font-size:20px; word-break:break-word;">{{ chamado.titulo }}</div>
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
-        <span class="badge s-{{ chamado.status }}">{{ {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','resolvido':'Resolvido'}[chamado.status] }}</span>
+        {# BUG-01 fix — dicionário completo com todos os status #}
+        <span class="badge s-{{ chamado.status }}">{{ STATUS_LABEL_ALL[chamado.status] }}</span>
         <span class="card-priority p-{{ chamado.prioridade }}">{{ {'alta':'Alta','media':'Média','baixa':'Baixa'}[chamado.prioridade] }}</span>
         {% if chamado.setor_nome %}<span class="tag">{{ chamado.setor_nome }}</span>{% endif %}
         <span class="breadcrumb-id" style="margin-left:4px;">{{ chamado.tempo_aberto }}</span>
@@ -131,6 +143,7 @@
             <div class="tl-icon ti-comment" style="border-color:var(--navy-border);">{{ usuario_iniciais }}</div>
             <div class="tl-body">
               <form method="post" action="{{ url_for('adicionar_comentario', chamado_id=chamado.id) }}" enctype="multipart/form-data" id="form-comentario">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <textarea class="field-input" name="texto" id="comentario-texto" placeholder="Adicionar um comentário..." style="min-height:72px; resize:vertical; margin-bottom:0;"></textarea>
 
                 <!-- Zona de anexo -->
@@ -206,6 +219,12 @@
           <span class="meta-label">Criado por</span>
           <span class="meta-value">{{ chamado.criado_por_nome or '—' }}</span>
         </div>
+        {% if chamado.solicitante_setor %}
+        <div class="meta-row">
+          <span class="meta-label">Setor solicitante</span>
+          <span class="meta-value">{{ chamado.solicitante_setor }}</span>
+        </div>
+        {% endif %}
         <div class="meta-row">
           <span class="meta-label">Atribuído a</span>
           <span class="meta-value">{{ chamado.atribuido_nome or '—' }}</span>
@@ -239,22 +258,27 @@
 
   <script>
     const chamadoId = {{ chamado.id }};
+    const getCsrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
 
     document.getElementById("btn-salvar-status")?.addEventListener("click", async () => {
       const status = document.getElementById("sel-status").value;
       const resp = await fetch(`/chamados/${chamadoId}/status`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
         body: JSON.stringify({ status }),
       });
       if (resp.ok) window.location.reload();
+      else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data.erro || "Não foi possível atualizar o status.");
+      }
     });
 
     document.getElementById("btn-salvar-atribuicao")?.addEventListener("click", async () => {
       const usuario_id = document.getElementById("sel-atribuido").value || null;
       const resp = await fetch(`/chamados/${chamadoId}/atribuir`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
         body: JSON.stringify({ usuario_id }),
       });
       if (resp.ok) window.location.reload();
@@ -263,7 +287,10 @@
     {% if usuario_papel == 'admin' %}
     document.getElementById("btn-excluir")?.addEventListener("click", async () => {
       if (!confirm("Excluir este chamado permanentemente? Esta ação não pode ser desfeita.")) return;
-      const resp = await fetch(`/chamados/${chamadoId}`, { method: "DELETE" });
+      const resp = await fetch(`/chamados/${chamadoId}`, {
+        method: "DELETE",
+        headers: { "X-CSRFToken": getCsrfToken() },
+      });
       if (resp.ok) window.location.href = "{{ url_for('board') }}";
     });
     {% endif %}

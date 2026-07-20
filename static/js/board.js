@@ -1,5 +1,7 @@
 // Console de Chamados — interações do board (drag-and-drop + modal + navegação)
 
+const getCsrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+
 document.addEventListener("DOMContentLoaded", () => {
   const cards = document.querySelectorAll(".card");
   const columnBodies = document.querySelectorAll(".column-body");
@@ -60,13 +62,19 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const resp = await fetch(`/chamados/${chamadoId}/status`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken(),
+          },
           body: JSON.stringify({ status: novoStatus }),
         });
-        if (!resp.ok) throw new Error("Falha ao atualizar status");
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          throw new Error(data.erro || "Falha ao atualizar status");
+        }
         window.location.reload();
       } catch (err) {
-        alert("Não foi possível mover o chamado. Tente novamente.");
+        alert(`Não foi possível mover o chamado: ${err.message}`);
         window.location.reload();
       }
     });

@@ -36,6 +36,7 @@
         {% endif %}
 
         <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="field-label">Nome completo</label>
           <input class="field-input" type="text" name="nome" placeholder="Ex: Maria Silva" required autofocus>
 

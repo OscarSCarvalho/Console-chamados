@@ -22,6 +22,7 @@
       {% endif %}
 
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field-label">E-mail</label>
         <input class="field-input" type="email" name="email" placeholder="seuemail@athos.com.br" required autofocus>
 

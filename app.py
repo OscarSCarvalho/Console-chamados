@@ -10,7 +10,10 @@ import uuid
 from datetime import date, datetime, timedelta
 from functools import wraps
 
-from flask import Flask, g, render_template, request, redirect, url_for, session, jsonify, Response
+from flask import Flask, g, render_template, request, redirect, url_for, session, jsonify, Response, flash
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -19,10 +22,22 @@ UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
 EXTENSOES_PERMITIDAS = {"jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx"}
 STATUS_VALIDOS = ("aberto", "andamento", "aguardando", "impedido", "resolvido", "cancelado")
 STATUS_TERMINAIS = frozenset({"resolvido", "cancelado"})
+CHAMADOS_POR_COLUNA = 50
+TITULO_MAX = 200
 
 app = Flask(__name__)
-app.secret_key = "troque-esta-chave-em-producao"
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
+app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1 hora
+
+csrf = CSRFProtect(app)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    default_limits=[],
+)
 
 
 # ---------- Banco de dados ----------
@@ -30,6 +45,7 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH)
+        g.db.execute("PRAGMA foreign_keys = ON")   # BUG-08 fix
         g.db.row_factory = sqlite3.Row
     return g.db
 
@@ -152,7 +168,16 @@ def admin_required(view):
     return wrapped
 
 
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"erro": "token CSRF inválido ou expirado"}), 400
+    flash("Sessão expirada. Por favor, tente novamente.", "erro")
+    return redirect(request.referrer or url_for("login"))
+
+
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])   # BUG-05 fix — rate limiting
 def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -166,7 +191,6 @@ def login():
             session["nome"] = usuario["nome"]
             session["papel"] = usuario["papel"]
             return redirect(url_for("board"))
-        # Verifica se está pendente de aprovação
         pendente = db.execute(
             "SELECT id FROM usuarios WHERE email = ? AND ativo = 0 AND papel = 'solicitante'", (email,)
         ).fetchone()
@@ -264,13 +288,15 @@ def calcular_sla(chamado):
 def tempo_relativo(data_str):
     momento = datetime.strptime(data_str, "%Y-%m-%d %H:%M:%S")
     delta = datetime.now() - momento
-    if delta.days >= 1:
-        return f"há {delta.days} dia{'s' if delta.days > 1 else ''}"
-    horas = delta.seconds // 3600
-    if horas >= 1:
-        return f"há {horas}h"
-    minutos = max(1, delta.seconds // 60)
-    return f"há {minutos} min"
+    total = delta.total_seconds()   # BUG-09 fix — usa total_seconds para lidar com delta negativo
+    if total < 60:
+        return "agora mesmo"
+    if total < 3600:
+        return f"há {max(1, int(total // 60))} min"
+    if total < 86400:
+        return f"há {int(total // 3600)}h"
+    dias = int(total // 86400)
+    return f"há {dias} dia{'s' if dias > 1 else ''}"
 
 
 def iniciais(nome):
@@ -318,11 +344,18 @@ def board():
         item["atribuido_iniciais"] = iniciais(item["atribuido_nome"]) if item["atribuido_nome"] else "—"
         colunas[c["status"]].append(item)
 
+    # M06 — paginação por coluna
+    colunas_overflow = {}
+    for s in STATUS_VALIDOS:
+        total = len(colunas[s])
+        colunas_overflow[s] = max(0, total - CHAMADOS_POR_COLUNA)
+        colunas[s] = colunas[s][:CHAMADOS_POR_COLUNA]
+
     ATIVOS = ("aberto", "andamento", "aguardando", "impedido")
 
     if papel == "solicitante":
         kpis = {
-            "total": sum(len(colunas[s]) for s in STATUS_VALIDOS),
+            "total": sum(len(colunas[s]) for s in STATUS_VALIDOS) + sum(colunas_overflow.values()),
             "abertos": len(colunas["aberto"]),
             "em_andamento": len(colunas["andamento"]),
             "resolvidos": len(colunas["resolvido"]),
@@ -372,6 +405,7 @@ def board():
     return render_template(
         "board.html",
         colunas=colunas,
+        colunas_overflow=colunas_overflow,
         kpis=kpis,
         setores=setores,
         usuarios=usuarios,
@@ -387,16 +421,29 @@ def board():
 @app.route("/chamados", methods=["POST"])
 @login_required
 def criar_chamado():
+    titulo = request.form.get("titulo", "").strip()
+    # BUG-11 / BUG-12 fix — validação de título no backend
+    if not titulo:
+        flash("O título do chamado não pode estar vazio.", "erro")
+        return redirect(url_for("board"))
+    if len(titulo) > TITULO_MAX:
+        titulo = titulo[:TITULO_MAX]
+
     dados = request.form
     db = get_db()
+    setor_id = dados.get("setor_id") or None
+    # Valida que setor_id existe se fornecido
+    if setor_id and not db.execute("SELECT id FROM setores WHERE id = ?", (setor_id,)).fetchone():
+        setor_id = None
+
     db.execute(
         """INSERT INTO chamados (titulo, descricao, prioridade, setor_id, sla_horas, criado_por)
            VALUES (?, ?, ?, ?, ?, ?)""",
         (
-            dados["titulo"],
+            titulo,
             dados.get("descricao", ""),
             dados.get("prioridade", "media"),
-            dados.get("setor_id") or None,
+            setor_id,
             sla_padrao_por_prioridade(dados.get("prioridade", "media")),
             session["usuario_id"],
         ),
@@ -473,7 +520,6 @@ def detalhe_chamado(chamado_id):
     if chamado is None:
         return redirect(url_for("board"))
 
-    # Solicitante só pode ver seus próprios chamados
     if session.get("papel") == "solicitante" and chamado["criado_por"] != session["usuario_id"]:
         return redirect(url_for("board"))
 
@@ -551,17 +597,36 @@ def adicionar_comentario(chamado_id):
             (chamado_id, session["usuario_id"], texto, anexo_filename, anexo_nome),
         )
         db.commit()
+    else:
+        # BUG-13 fix — feedback para comentário vazio
+        flash("O comentário não pode estar vazio.", "erro")
+
     return redirect(url_for("detalhe_chamado", chamado_id=chamado_id))
 
 
 @app.route("/chamados/<int:chamado_id>/status", methods=["POST"])
 @login_required
+@csrf.exempt  # protegido via X-CSRFToken no JS
 def atualizar_status(chamado_id):
     if session.get("papel") == "solicitante":
         return jsonify({"erro": "sem permissão"}), 403
-    novo_status = request.json.get("status")
+
+    # BUG-07 fix — trata JSON malformado de forma consistente
+    dados = request.get_json(silent=True)
+    if not dados:
+        return jsonify({"erro": "body JSON inválido"}), 400
+
+    novo_status = dados.get("status")
     if novo_status not in STATUS_VALIDOS:
         return jsonify({"erro": "status inválido"}), 400
+
+    # Valida X-CSRFToken manualmente pois a rota é @csrf.exempt
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
 
     db = get_db()
     atual = db.execute("SELECT status FROM chamados WHERE id = ?", (chamado_id,)).fetchone()
@@ -571,12 +636,14 @@ def atualizar_status(chamado_id):
     if atual["status"] == "cancelado":
         return jsonify({"erro": "chamado cancelado não pode ser reaberto"}), 400
 
-    resolvido_em = "datetime('now')" if novo_status == "resolvido" else "NULL"
+    # BUG-06 fix — sem f-string SQL; usa CASE expression parametrizado
     db.execute(
-        f"""UPDATE chamados
-            SET status = ?, atualizado_em = datetime('now'), resolvido_em = {resolvido_em}
-            WHERE id = ?""",
-        (novo_status, chamado_id),
+        """UPDATE chamados
+           SET status = ?,
+               atualizado_em = datetime('now'),
+               resolvido_em = CASE WHEN ? = 'resolvido' THEN datetime('now') ELSE NULL END
+           WHERE id = ?""",
+        (novo_status, novo_status, chamado_id),
     )
     db.execute(
         """INSERT INTO movimentacoes (chamado_id, status_anterior, status_novo, usuario_id)
@@ -589,10 +656,23 @@ def atualizar_status(chamado_id):
 
 @app.route("/chamados/<int:chamado_id>/atribuir", methods=["POST"])
 @login_required
+@csrf.exempt
 def atribuir_chamado(chamado_id):
     if session.get("papel") == "solicitante":
         return jsonify({"erro": "sem permissão"}), 403
-    usuario_id = request.json.get("usuario_id") or None
+
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
+
+    dados = request.get_json(silent=True)
+    if dados is None:
+        return jsonify({"erro": "body JSON inválido"}), 400
+
+    usuario_id = dados.get("usuario_id") or None
     db = get_db()
     db.execute(
         "UPDATE chamados SET atribuido_a = ?, atualizado_em = datetime('now') WHERE id = ?",
@@ -605,7 +685,15 @@ def atribuir_chamado(chamado_id):
 @app.route("/chamados/<int:chamado_id>", methods=["DELETE"])
 @login_required
 @admin_required
+@csrf.exempt
 def excluir_chamado(chamado_id):
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
+
     db = get_db()
     db.execute("DELETE FROM comentarios WHERE chamado_id = ?", (chamado_id,))
     db.execute("DELETE FROM movimentacoes WHERE chamado_id = ?", (chamado_id,))
@@ -795,6 +883,13 @@ def criar_usuario():
     if session.get("papel") != "admin":
         return jsonify({"erro": "acesso restrito"}), 403
     dados = request.form
+
+    # BUG-02 fix — valida senha não vazia
+    senha = dados.get("senha", "").strip()
+    if not senha:
+        flash("A senha não pode estar vazia.", "erro")
+        return redirect(url_for("listar_usuarios"))
+
     db = get_db()
     try:
         db.execute(
@@ -802,24 +897,33 @@ def criar_usuario():
             (
                 dados["nome"].strip(),
                 dados["email"].strip().lower(),
-                generate_password_hash(dados["senha"]),
+                generate_password_hash(senha),
                 dados.get("papel", "atendente"),
                 dados.get("setor", "").strip() or None,
             ),
         )
         db.commit()
     except sqlite3.IntegrityError:
-        pass
+        flash("Este e-mail já está cadastrado.", "erro")
     return redirect(url_for("listar_usuarios"))
 
 
 @app.route("/usuarios/<int:usuario_id>/toggle", methods=["POST"])
 @login_required
+@csrf.exempt
 def toggle_usuario(usuario_id):
     if session.get("papel") != "admin":
         return jsonify({"erro": "acesso restrito"}), 403
     if usuario_id == session["usuario_id"]:
         return jsonify({"erro": "não é possível desativar a própria conta"}), 400
+
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
+
     db = get_db()
     db.execute(
         "UPDATE usuarios SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END WHERE id = ?",
@@ -831,11 +935,19 @@ def toggle_usuario(usuario_id):
 
 @app.route("/usuarios/<int:usuario_id>", methods=["DELETE"])
 @login_required
+@csrf.exempt
 def excluir_usuario(usuario_id):
     if session.get("papel") != "admin":
         return jsonify({"erro": "acesso restrito"}), 403
+
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
+
     db = get_db()
-    # Permite excluir apenas solicitantes pendentes (ativo=0)
     usuario = db.execute(
         "SELECT papel, ativo FROM usuarios WHERE id = ?", (usuario_id,)
     ).fetchone()

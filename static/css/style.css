@@ -541,6 +541,38 @@ textarea.field-input{ resize:vertical; min-height:70px; font-family: var(--font-
 .btn-danger:hover{ background:rgba(255,51,102,0.18); box-shadow: 0 0 8px rgba(255,51,102,0.22); }
 .empty-state{ text-align:center; padding:48px 20px; color:var(--text-low); font-size:12px; font-family: var(--font-label); letter-spacing:0.06em; }
 
+/* ===== FLASH MESSAGES ===== */
+.flash-msg{
+  margin: 12px 28px 0;
+  padding: 10px 14px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--font-label);
+  letter-spacing: 0.04em;
+}
+.flash-erro{
+  background: rgba(255,51,102,0.1);
+  border: 1px solid rgba(255,51,102,0.35);
+  color: #ff8099;
+}
+.flash-sucesso{
+  background: rgba(0,255,136,0.08);
+  border: 1px solid rgba(0,255,136,0.3);
+  color: var(--amber-soft);
+}
+
+/* ===== PAGINAÇÃO DE COLUNA ===== */
+.col-overflow{
+  font-size: 10px;
+  color: var(--text-low);
+  text-align: center;
+  padding: 8px 4px 4px;
+  font-family: var(--font-label);
+  letter-spacing: 0.08em;
+  border-top: 1px dashed rgba(42,42,58,0.6);
+  margin-top: 4px;
+}
+
 /* ===== RESPONSIVO ===== */
 @media (max-width: 1200px){
   .kpi-row{ grid-template-columns: repeat(3, 1fr); }
