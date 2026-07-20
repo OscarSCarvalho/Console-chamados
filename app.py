@@ -25,6 +25,11 @@ STATUS_TERMINAIS = frozenset({"resolvido", "cancelado"})
 CHAMADOS_POR_COLUNA = 50
 TITULO_MAX = 200
 
+
+def agora() -> str:
+    """Retorna datetime local formatado para persistência. Evita datetime('now') do SQLite que é UTC."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
@@ -67,7 +72,7 @@ def migrate_db():
                 chamado_id INTEGER NOT NULL REFERENCES chamados(id),
                 usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
                 texto      TEXT NOT NULL,
-                criado_em  TEXT NOT NULL DEFAULT (datetime('now'))
+                criado_em  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )
         """)
         conn.execute(
@@ -87,7 +92,7 @@ def migrate_db():
                     papel       TEXT NOT NULL CHECK (papel IN ('solicitante', 'atendente', 'admin')) DEFAULT 'atendente',
                     setor       TEXT,
                     ativo       INTEGER NOT NULL DEFAULT 1,
-                    criado_em   TEXT NOT NULL DEFAULT (datetime('now'))
+                    criado_em   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
                 )
             """)
             conn.execute("""
@@ -115,8 +120,8 @@ def migrate_db():
                     setor_id      INTEGER REFERENCES setores(id),
                     atribuido_a   INTEGER REFERENCES usuarios(id),
                     criado_por    INTEGER REFERENCES usuarios(id),
-                    criado_em     TEXT NOT NULL DEFAULT (datetime('now')),
-                    atualizado_em TEXT NOT NULL DEFAULT (datetime('now')),
+                    criado_em     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                    atualizado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                     resolvido_em  TEXT
                 )
             """)
@@ -436,9 +441,10 @@ def criar_chamado():
     if setor_id and not db.execute("SELECT id FROM setores WHERE id = ?", (setor_id,)).fetchone():
         setor_id = None
 
+    ts = agora()
     db.execute(
-        """INSERT INTO chamados (titulo, descricao, prioridade, setor_id, sla_horas, criado_por)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO chamados (titulo, descricao, prioridade, setor_id, sla_horas, criado_por, criado_em, atualizado_em)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             titulo,
             dados.get("descricao", ""),
@@ -446,12 +452,14 @@ def criar_chamado():
             setor_id,
             sla_padrao_por_prioridade(dados.get("prioridade", "media")),
             session["usuario_id"],
+            ts,
+            ts,
         ),
     )
     chamado_id = db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
     db.execute(
-        "INSERT INTO movimentacoes (chamado_id, status_anterior, status_novo, usuario_id) VALUES (?, NULL, 'aberto', ?)",
-        (chamado_id, session["usuario_id"]),
+        "INSERT INTO movimentacoes (chamado_id, status_anterior, status_novo, usuario_id, criado_em) VALUES (?, NULL, 'aberto', ?, ?)",
+        (chamado_id, session["usuario_id"], ts),
     )
     db.commit()
     return redirect(url_for("board"))
@@ -593,8 +601,8 @@ def adicionar_comentario(chamado_id):
     if texto or anexo_filename:
         db = get_db()
         db.execute(
-            "INSERT INTO comentarios (chamado_id, usuario_id, texto, anexo, anexo_nome) VALUES (?, ?, ?, ?, ?)",
-            (chamado_id, session["usuario_id"], texto, anexo_filename, anexo_nome),
+            "INSERT INTO comentarios (chamado_id, usuario_id, texto, anexo, anexo_nome, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+            (chamado_id, session["usuario_id"], texto, anexo_filename, anexo_nome, agora()),
         )
         db.commit()
     else:
@@ -636,19 +644,19 @@ def atualizar_status(chamado_id):
     if atual["status"] == "cancelado":
         return jsonify({"erro": "chamado cancelado não pode ser reaberto"}), 400
 
-    # BUG-06 fix — sem f-string SQL; usa CASE expression parametrizado
+    ts = agora()
     db.execute(
         """UPDATE chamados
            SET status = ?,
-               atualizado_em = datetime('now'),
-               resolvido_em = CASE WHEN ? = 'resolvido' THEN datetime('now') ELSE NULL END
+               atualizado_em = ?,
+               resolvido_em = CASE WHEN ? = 'resolvido' THEN ? ELSE NULL END
            WHERE id = ?""",
-        (novo_status, novo_status, chamado_id),
+        (novo_status, ts, novo_status, ts, chamado_id),
     )
     db.execute(
-        """INSERT INTO movimentacoes (chamado_id, status_anterior, status_novo, usuario_id)
-           VALUES (?, ?, ?, ?)""",
-        (chamado_id, atual["status"], novo_status, session["usuario_id"]),
+        """INSERT INTO movimentacoes (chamado_id, status_anterior, status_novo, usuario_id, criado_em)
+           VALUES (?, ?, ?, ?, ?)""",
+        (chamado_id, atual["status"], novo_status, session["usuario_id"], ts),
     )
     db.commit()
     return jsonify({"ok": True})
@@ -675,8 +683,8 @@ def atribuir_chamado(chamado_id):
     usuario_id = dados.get("usuario_id") or None
     db = get_db()
     db.execute(
-        "UPDATE chamados SET atribuido_a = ?, atualizado_em = datetime('now') WHERE id = ?",
-        (usuario_id, chamado_id),
+        "UPDATE chamados SET atribuido_a = ?, atualizado_em = ? WHERE id = ?",
+        (usuario_id, agora(), chamado_id),
     )
     db.commit()
     return jsonify({"ok": True})
