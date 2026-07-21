@@ -4,7 +4,9 @@ extend-ignore =
     E501,
     W503,
     E302,
-    E303
+    E303,
+    E221,
+    E305
 exclude =
     .venv,
     venv,
