@@ -609,9 +609,16 @@ def detalhe_chamado(chamado_id):
 @app.route("/chamados/<int:chamado_id>/comentarios", methods=["POST"])
 @login_required
 def adicionar_comentario(chamado_id):
-    if session.get("papel") == "solicitante":
-        flash("Sem permissão para comentar.", "erro")
+    db = get_db()
+    chamado = db.execute("SELECT criado_por FROM chamados WHERE id = ?", (chamado_id,)).fetchone()
+    if not chamado:
+        return redirect(url_for("board"))
+
+    # Solicitante só pode comentar no próprio chamado
+    if session.get("papel") == "solicitante" and chamado["criado_por"] != session["usuario_id"]:
+        flash("Sem permissão para comentar neste chamado.", "erro")
         return redirect(url_for("detalhe_chamado", chamado_id=chamado_id))
+
     texto = request.form.get("texto", "").strip()
     arquivo = request.files.get("arquivo")
     anexo_filename = None

@@ -99,9 +99,10 @@
         {% endif %}
       </div>
 
-      {% if usuario_papel != 'solicitante' %}
       <div class="detail-card">
-        <div class="detail-card-title">Histórico &amp; Comentários</div>
+        <div class="detail-card-title">
+          {% if usuario_papel == 'solicitante' %}Acompanhamento do chamado{% else %}Histórico &amp; Comentários{% endif %}
+        </div>
         <div class="timeline">
 
           {% set STATUS_LABEL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','impedido':'Com impedimento','resolvido':'Resolvido','cancelado':'Cancelado'} %}
@@ -181,7 +182,6 @@
 
         </div>
       </div>
-      {% endif %}
     </div>
 
     <!-- ===== SIDEBAR ===== -->
