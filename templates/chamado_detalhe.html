@@ -199,7 +199,7 @@
           </p>
         {% else %}
         <select class="field-input" id="sel-status" style="margin-top:0;">
-          {% for s, label in [('aberto','Aberto'),('andamento','Em andamento'),('aguardando','Aguardando setor'),('impedido','Com impedimento'),('resolvido','Resolvido'),('cancelado','Cancelado')] %}
+          {% for s, label in [('aberto','Aberto'),('andamento','Em andamento'),('aguardando','Aguardando solicitante'),('impedido','Com impedimento'),('resolvido','Resolvido'),('cancelado','Cancelado')] %}
           <option value="{{ s }}" {% if chamado.status == s %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>

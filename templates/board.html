@@ -92,7 +92,7 @@
       <div class="kpi-value">{{ kpis.em_andamento }} <small>tickets</small></div>
     </div>
     <div class="kpi-card k-aguardando">
-      <div class="kpi-label">Aguardando setor</div>
+      <div class="kpi-label">Aguardando solicitante</div>
       <div class="kpi-value">{{ kpis.aguardando_setor }} <small>tickets</small></div>
     </div>
     <div class="kpi-card k-atraso">
@@ -111,7 +111,7 @@
   {% endif %}
 
   <div class="board">
-    {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando setor', 'impedido': 'Com impedimento', 'resolvido': 'Resolvido', 'cancelado': 'Cancelado'} %}
+    {% set nomes_coluna = {'aberto': 'Aberto', 'andamento': 'Em andamento', 'aguardando': 'Aguardando solicitante', 'impedido': 'Com impedimento', 'resolvido': 'Resolvido', 'cancelado': 'Cancelado'} %}
     {% for status, titulo_coluna in nomes_coluna.items() %}
     <div class="column col-{{ status }}" data-status="{{ status }}">
       <div class="column-head">
