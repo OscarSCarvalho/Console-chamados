@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Lint ────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar flake8
+        run: pip install flake8
+
+      - name: Checar estilo e erros
+        run: flake8 app.py
+
+  # ── 2. Segurança ───────────────────────────────────────────────────────────
+  security:
+    name: Segurança (bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar bandit
+        run: pip install bandit
+
+      - name: Escanear vulnerabilidades
+        run: bandit -r app.py -ll
+
+  # ── 3. Testes ─────────────────────────────────────────────────────────────
+  test:
+    name: Testes (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt pytest
+
+      - name: Rodar testes
+        run: pytest tests/ -v --tb=short
+        env:
+          SECRET_KEY: "ci-secret-key-nao-usar-em-producao"

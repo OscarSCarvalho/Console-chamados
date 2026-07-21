@@ -17,7 +17,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-DB_PATH = "console.db"
+DB_PATH = os.environ.get("DB_PATH", "console.db")
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
 EXTENSOES_PERMITIDAS = {"jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx"}
 STATUS_VALIDOS = ("aberto", "andamento", "aguardando", "impedido", "resolvido", "cancelado")
