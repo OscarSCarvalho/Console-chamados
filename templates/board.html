@@ -124,7 +124,7 @@
           <div class="card-top">
             <span class="card-id">#{{ '%04d'|format(c.id) }}</span>
             <span class="card-priority p-{{ c.prioridade }}">
-              {{ {'alta': 'Alta', 'media': 'Média', 'baixa': 'Baixa'}[c.prioridade] }}
+              {{ {'alta': 'Crítico', 'media': 'Urgente', 'baixa': 'Comum'}[c.prioridade] }}
             </span>
           </div>
           <div class="card-title">{{ c.titulo }}</div>
@@ -162,7 +162,7 @@
   <div class="modal-overlay" id="modal-novo">
     <div class="modal-box">
       <div class="modal-title">Novo chamado</div>
-      <form method="post" action="{{ url_for('criar_chamado') }}">
+      <form method="post" action="{{ url_for('criar_chamado') }}" enctype="multipart/form-data" id="form-novo-chamado">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field-label">Título</label>
         <input class="field-input" type="text" name="titulo" placeholder="Resumo do problema" required maxlength="200">
@@ -170,16 +170,24 @@
         <label class="field-label">Descrição</label>
         <textarea class="field-input" name="descricao" placeholder="Detalhes do chamado"></textarea>
 
-        <div class="field-row">
+        <label class="field-label">Evidência <small style="color:var(--text-low); font-size:10px;">(opcional — imagem ou documento, máx. 10 MB)</small></label>
+        <div class="attach-zone" id="nc-attach-zone">
+          <input type="file" id="nc-attach-input" name="arquivo" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx" style="display:none;">
+          <label for="nc-attach-input" class="attach-btn">&#128206; Anexar evidência</label>
+          <span class="attach-filename" id="nc-attach-filename"></span>
+          <button type="button" class="attach-clear" id="nc-attach-clear" title="Remover" style="display:none;">&#215;</button>
+        </div>
+
+        {% if usuario_papel != 'solicitante' %}
+        <div class="field-row" style="margin-top:12px;">
           <div>
             <label class="field-label">Prioridade</label>
             <select class="field-input" name="prioridade">
-              <option value="alta">Alta (SLA 4h)</option>
-              <option value="media" selected>Média (SLA 24h)</option>
-              <option value="baixa">Baixa (SLA 48h)</option>
+              <option value="alta">Crítico (SLA 4h)</option>
+              <option value="media" selected>Urgente (SLA 24h)</option>
+              <option value="baixa">Comum (SLA 48h)</option>
             </select>
           </div>
-          {% if usuario_papel != 'solicitante' %}
           <div>
             <label class="field-label">Setor</label>
             <select class="field-input" name="setor_id">
@@ -189,8 +197,8 @@
               {% endfor %}
             </select>
           </div>
-          {% endif %}
         </div>
+        {% endif %}
 
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" style="flex:1" id="btn-cancelar-novo">Cancelar</button>
@@ -202,6 +210,29 @@
 
   <script>
     window.USUARIO_PAPEL = "{{ usuario_papel }}";
+
+    // Anexo no modal novo chamado
+    const ncInput = document.getElementById("nc-attach-input");
+    const ncName  = document.getElementById("nc-attach-filename");
+    const ncClear = document.getElementById("nc-attach-clear");
+
+    ncInput?.addEventListener("change", () => {
+      const f = ncInput.files[0];
+      if (!f) return;
+      if (f.size > 10 * 1024 * 1024) {
+        alert("Arquivo muito grande. O limite é 10 MB.");
+        ncInput.value = "";
+        return;
+      }
+      ncName.textContent = f.name;
+      ncClear.style.display = "inline-flex";
+    });
+
+    ncClear?.addEventListener("click", () => {
+      ncInput.value = "";
+      ncName.textContent = "";
+      ncClear.style.display = "none";
+    });
   </script>
   <script src="{{ url_for('static', filename='js/board.js') }}"></script>
 </body>

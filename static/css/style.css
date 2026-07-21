@@ -80,12 +80,132 @@ body{
   );
 }
 
-/* ===== LOGIN ===== */
-.login-wrap{
-  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+/* ===== LOGIN — SPLIT LAYOUT ===== */
+.body-login{ background: var(--navy-950); overflow: hidden; }
+
+.login-split{
+  display: flex;
+  min-height: 100vh;
 }
+
+/* ---- Painel Esquerdo ---- */
+.login-left{
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(160deg, #071814 0%, #091a2c 55%, #060e18 100%);
+  border-right: 1px solid rgba(0,255,136,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 36px;
+}
+
+.ll-grid{
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0,255,136,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,136,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.ll-glow-orb{
+  position: absolute; border-radius: 50%; pointer-events: none; filter: blur(80px);
+}
+.ll-orb1{
+  width: 360px; height: 360px;
+  background: radial-gradient(circle, rgba(0,255,136,0.13) 0%, transparent 70%);
+  top: -80px; left: -80px;
+}
+.ll-orb2{
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(0,212,255,0.10) 0%, transparent 70%);
+  bottom: -60px; right: -40px;
+}
+
+.ll-inner{
+  position: relative; z-index: 1;
+  max-width: 420px;
+}
+
+.ll-mark{
+  width: 64px; height: 64px; border-radius: 8px;
+  background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+  color: #071814;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 900; font-size: 28px;
+  box-shadow: 0 0 24px rgba(0,255,136,0.55), 0 0 48px rgba(0,255,136,0.22);
+  margin-bottom: 28px;
+}
+
+.ll-title{
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #e8f8f0;
+  line-height: 1.15;
+  text-shadow: 0 0 18px rgba(0,255,136,0.18);
+  margin-bottom: 8px;
+}
+
+.ll-company{
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--amber);
+  text-shadow: var(--glow-sm);
+  margin-bottom: 20px;
+}
+
+.ll-tagline{
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(154,165,189,0.75);
+  line-height: 1.7;
+  max-width: 360px;
+}
+
+.ll-divider{
+  width: 48px; height: 2px;
+  background: linear-gradient(90deg, var(--amber), transparent);
+  margin: 28px 0;
+  box-shadow: var(--glow-sm);
+}
+
+.ll-features{
+  list-style: none;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.ll-features li{
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--font-label);
+  font-size: 11px; letter-spacing: 0.08em;
+  color: rgba(154,165,189,0.85);
+}
+.ll-dot{
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--amber);
+  box-shadow: var(--glow-sm);
+  flex-shrink: 0;
+}
+
+/* ---- Painel Direito ---- */
+.login-right{
+  flex: 1;
+  max-width: 50%;
+  background: var(--navy-900);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 48px;
+}
+
+/* ---- Card do formulário ---- */
 .login-card{
-  width:100%; max-width:390px;
+  width: 100%; max-width: 460px;
   background: var(--navy-800); border:1px solid var(--navy-border);
   clip-path: polygon(
     0 var(--chamfer), var(--chamfer) 0,
@@ -122,6 +242,24 @@ body{
   border-radius:3px; padding:16px 14px; font-size:13px; margin-bottom:16px; text-align:center;
 }
 .login-hint{ margin-top:20px; font-size:11px; color: var(--text-low); line-height:1.6; font-family: var(--font-label); }
+
+/* ---- Login responsivo ---- */
+@media (max-width: 768px){
+  .body-login{ overflow: auto; }
+  .login-split{ flex-direction: column; min-height: 100vh; }
+  .login-left{
+    padding: 36px 24px 32px;
+    border-right: none;
+    border-bottom: 1px solid rgba(0,255,136,0.12);
+  }
+  .ll-mark{ width: 48px; height: 48px; font-size: 22px; margin-bottom: 18px; }
+  .ll-title{ font-size: 22px; }
+  .ll-features{ display: none; }
+  .ll-divider{ display: none; }
+  .ll-tagline{ font-size: 12px; }
+  .login-right{ width: 100%; padding: 32px 20px 40px; }
+  .login-card{ max-width: 100%; }
+}
 
 /* ===== NOTIFICAÇÃO ===== */
 .notif-wrap{ position:relative; }

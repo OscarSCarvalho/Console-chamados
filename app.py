@@ -138,6 +138,13 @@ def migrate_db():
         if "anexo_nome" not in cols_com:
             conn.execute("ALTER TABLE comentarios ADD COLUMN anexo_nome TEXT")
 
+        # Migração 5: colunas de evidência nos chamados
+        cols_cha = [row[1] for row in conn.execute("PRAGMA table_info(chamados)").fetchall()]
+        if "anexo" not in cols_cha:
+            conn.execute("ALTER TABLE chamados ADD COLUMN anexo TEXT")
+        if "anexo_nome" not in cols_cha:
+            conn.execute("ALTER TABLE chamados ADD COLUMN anexo_nome TEXT")
+
         conn.commit()
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -436,22 +443,39 @@ def criar_chamado():
 
     dados = request.form
     db = get_db()
+    prioridade = dados.get("prioridade", "baixa")
+    if session.get("papel") == "solicitante":
+        prioridade = "baixa"
     setor_id = dados.get("setor_id") or None
-    # Valida que setor_id existe se fornecido
     if setor_id and not db.execute("SELECT id FROM setores WHERE id = ?", (setor_id,)).fetchone():
         setor_id = None
 
+    # Evidência anexada ao abrir o chamado
+    anexo_filename = None
+    anexo_nome = None
+    arquivo = request.files.get("arquivo")
+    if arquivo and arquivo.filename:
+        ext = arquivo.filename.rsplit(".", 1)[-1].lower() if "." in arquivo.filename else ""
+        if ext in EXTENSOES_PERMITIDAS:
+            nome_seguro = secure_filename(arquivo.filename)
+            anexo_filename = f"{uuid.uuid4().hex}.{ext}"
+            arquivo.save(os.path.join(UPLOAD_DIR, anexo_filename))
+            anexo_nome = nome_seguro
+
     ts = agora()
     db.execute(
-        """INSERT INTO chamados (titulo, descricao, prioridade, setor_id, sla_horas, criado_por, criado_em, atualizado_em)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO chamados (titulo, descricao, prioridade, setor_id, sla_horas, criado_por,
+                                 anexo, anexo_nome, criado_em, atualizado_em)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             titulo,
             dados.get("descricao", ""),
-            dados.get("prioridade", "media"),
+            prioridade,
             setor_id,
-            sla_padrao_por_prioridade(dados.get("prioridade", "media")),
+            sla_padrao_por_prioridade(prioridade),
             session["usuario_id"],
+            anexo_filename,
+            anexo_nome,
             ts,
             ts,
         ),
@@ -567,7 +591,7 @@ def detalhe_chamado(chamado_id):
     timeline.sort(key=lambda x: x["criado_em"])
 
     usuarios = db.execute(
-        "SELECT * FROM usuarios WHERE ativo = 1 ORDER BY nome"
+        "SELECT id, nome FROM usuarios WHERE ativo = 1 AND papel IN ('atendente','admin') ORDER BY nome"
     ).fetchall()
 
     return render_template(
@@ -585,6 +609,9 @@ def detalhe_chamado(chamado_id):
 @app.route("/chamados/<int:chamado_id>/comentarios", methods=["POST"])
 @login_required
 def adicionar_comentario(chamado_id):
+    if session.get("papel") == "solicitante":
+        flash("Sem permissão para comentar.", "erro")
+        return redirect(url_for("detalhe_chamado", chamado_id=chamado_id))
     texto = request.form.get("texto", "").strip()
     arquivo = request.files.get("arquivo")
     anexo_filename = None
@@ -690,6 +717,37 @@ def atribuir_chamado(chamado_id):
     return jsonify({"ok": True})
 
 
+@app.route("/chamados/<int:chamado_id>/prioridade", methods=["POST"])
+@login_required
+@csrf.exempt
+def atualizar_prioridade(chamado_id):
+    if session.get("papel") == "solicitante":
+        return jsonify({"erro": "sem permissão"}), 403
+
+    token = request.headers.get("X-CSRFToken", "")
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(token)
+    except Exception:
+        return jsonify({"erro": "token CSRF inválido"}), 400
+
+    dados = request.get_json(silent=True)
+    if not dados:
+        return jsonify({"erro": "body JSON inválido"}), 400
+
+    nova_prioridade = dados.get("prioridade")
+    if nova_prioridade not in ("alta", "media", "baixa"):
+        return jsonify({"erro": "prioridade inválida"}), 400
+
+    db = get_db()
+    db.execute(
+        "UPDATE chamados SET prioridade = ?, sla_horas = ?, atualizado_em = ? WHERE id = ?",
+        (nova_prioridade, sla_padrao_por_prioridade(nova_prioridade), agora(), chamado_id),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
 @app.route("/chamados/<int:chamado_id>", methods=["DELETE"])
 @login_required
 @admin_required
@@ -762,7 +820,7 @@ def relatorios():
     ).fetchall()
     prio_map = {r["prioridade"]: r["n"] for r in prio_rows}
     chart_prioridade = {
-        "labels": ["Alta", "Média", "Baixa"],
+        "labels": ["Crítico", "Urgente", "Comum"],
         "data": [prio_map.get(p, 0) for p in ("alta", "media", "baixa")],
         "colors": ["rgba(255,51,102,0.85)", "rgba(245,158,11,0.8)", "rgba(0,255,136,0.8)"],
     }
@@ -821,7 +879,7 @@ def relatorios():
     ).fetchall()
     mttr_map = {r["prioridade"]: (r["mttr"] or 0) for r in mttr_p_rows}
     chart_mttr = {
-        "labels": ["Alta", "Média", "Baixa"],
+        "labels": ["Crítico", "Urgente", "Comum"],
         "data": [mttr_map.get(p, 0) for p in ("alta", "media", "baixa")],
         "colors": ["rgba(255,51,102,0.85)", "rgba(245,158,11,0.8)", "rgba(0,255,136,0.8)"],
     }

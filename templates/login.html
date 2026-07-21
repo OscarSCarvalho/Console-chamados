@@ -6,37 +6,64 @@
 <title>Login — Hub Servisdesk</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
-  <div class="login-wrap">
-    <div class="login-card">
-      <div class="login-brand">
-        <div class="login-mark">A</div>
-        <div>
-          <div class="login-title">Hub Servisdesk</div>
-          <div class="login-sub">Athos Tecnologia</div>
-        </div>
-      </div>
+<body class="body-login">
+  <div class="login-split">
 
-      {% if erro %}
-        <div class="login-error">{{ erro }}</div>
-      {% endif %}
+    <!-- ===== PAINEL ESQUERDO ===== -->
+    <div class="login-left">
+      <div class="ll-inner">
+        <div class="ll-mark">A</div>
+        <h1 class="ll-title">Hub Servisdesk</h1>
+        <p class="ll-company">Athos Tecnologia</p>
+        <p class="ll-tagline">Plataforma centralizada de gestão e atendimento de chamados</p>
 
-      <form method="post">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="field-label">E-mail</label>
-        <input class="field-input" type="email" name="email" placeholder="seuemail@athos.com.br" required autofocus>
+        <div class="ll-divider"></div>
 
-        <label class="field-label">Senha</label>
-        <input class="field-input" type="password" name="senha" placeholder="••••••••" required>
+        <ul class="ll-features">
+          <li><span class="ll-dot"></span>Kanban de chamados em tempo real</li>
+          <li><span class="ll-dot"></span>Relatórios e métricas integrados</li>
+          <li><span class="ll-dot"></span>Controle de SLA e prioridades</li>
+        </ul>
 
-        <button class="btn btn-primary btn-block" type="submit">Entrar</button>
-      </form>
-
-      <div class="login-hint" style="text-align:center;">
-        Primeiro acesso?
-        <a href="{{ url_for('cadastro') }}" style="color:var(--amber); text-decoration:none;">Cadastre-se aqui</a>
+        <div class="ll-glow-orb ll-orb1"></div>
+        <div class="ll-glow-orb ll-orb2"></div>
+        <div class="ll-grid"></div>
       </div>
     </div>
+
+    <!-- ===== PAINEL DIREITO — FORMULÁRIO ===== -->
+    <div class="login-right">
+      <div class="login-card">
+        <div class="login-brand">
+          <div class="login-mark">A</div>
+          <div>
+            <div class="login-title">Hub Servisdesk</div>
+            <div class="login-sub">Athos Tecnologia</div>
+          </div>
+        </div>
+
+        {% if erro %}
+          <div class="login-error">{{ erro }}</div>
+        {% endif %}
+
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="field-label">E-mail</label>
+          <input class="field-input" type="email" name="email" placeholder="seuemail@athos.com.br" required autofocus>
+
+          <label class="field-label">Senha</label>
+          <input class="field-input" type="password" name="senha" placeholder="••••••••" required>
+
+          <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+        </form>
+
+        <div class="login-hint" style="text-align:center;">
+          Primeiro acesso?
+          <a href="{{ url_for('cadastro') }}" style="color:var(--amber); text-decoration:none;">Cadastre-se aqui</a>
+        </div>
+      </div>
+    </div>
+
   </div>
 </body>
 </html>

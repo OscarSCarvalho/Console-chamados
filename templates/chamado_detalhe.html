@@ -56,7 +56,7 @@
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
         {# BUG-01 fix — dicionário completo com todos os status #}
         <span class="badge s-{{ chamado.status }}">{{ STATUS_LABEL_ALL[chamado.status] }}</span>
-        <span class="card-priority p-{{ chamado.prioridade }}">{{ {'alta':'Alta','media':'Média','baixa':'Baixa'}[chamado.prioridade] }}</span>
+        <span class="card-priority p-{{ chamado.prioridade }}">{{ {'alta':'Crítico','media':'Urgente','baixa':'Comum'}[chamado.prioridade] }}</span>
         {% if chamado.setor_nome %}<span class="tag">{{ chamado.setor_nome }}</span>{% endif %}
         <span class="breadcrumb-id" style="margin-left:4px;">{{ chamado.tempo_aberto }}</span>
       </div>
@@ -82,8 +82,24 @@
         {% else %}
         <div class="chamado-desc vazio">Sem descrição fornecida.</div>
         {% endif %}
+
+        {% if chamado.anexo %}
+        {% set ext_ev = chamado.anexo.rsplit('.', 1)[-1].lower() %}
+        <div class="tl-attachment" style="margin-top:14px; padding-top:12px; border-top:1px solid var(--navy-border);">
+          <span class="field-label" style="display:block; margin-bottom:8px;">Evidência anexada</span>
+          {% if ext_ev in ['jpg','jpeg','png','gif','webp'] %}
+            <a href="{{ url_for('static', filename='uploads/' + chamado.anexo) }}" target="_blank" rel="noopener" class="attach-img-link" style="display:block; margin-bottom:8px;">
+              <img src="{{ url_for('static', filename='uploads/' + chamado.anexo) }}" class="attach-thumb" alt="{{ chamado.anexo_nome or 'evidência' }}" style="max-width:100%; max-height:260px; border-radius:4px;">
+            </a>
+          {% endif %}
+          <a href="{{ url_for('static', filename='uploads/' + chamado.anexo) }}" target="_blank" rel="noopener" download="{{ chamado.anexo_nome or chamado.anexo }}" class="attach-link">
+            &#128206; {{ chamado.anexo_nome or chamado.anexo }}
+          </a>
+        </div>
+        {% endif %}
       </div>
 
+      {% if usuario_papel != 'solicitante' %}
       <div class="detail-card">
         <div class="detail-card-title">Histórico &amp; Comentários</div>
         <div class="timeline">
@@ -165,6 +181,7 @@
 
         </div>
       </div>
+      {% endif %}
     </div>
 
     <!-- ===== SIDEBAR ===== -->
@@ -172,7 +189,10 @@
 
       <div class="detail-card">
         <div class="detail-card-title">Status</div>
-        {% if chamado.status == 'cancelado' %}
+        {% if usuario_papel == 'solicitante' %}
+          {% set STATUS_LABEL_ALL = {'aberto':'Aberto','andamento':'Em andamento','aguardando':'Aguardando','impedido':'Com impedimento','resolvido':'Resolvido','cancelado':'Cancelado'} %}
+          <span class="badge s-{{ chamado.status }}" style="margin-top:4px; display:inline-block;">{{ STATUS_LABEL_ALL[chamado.status] }}</span>
+        {% elif chamado.status == 'cancelado' %}
           <div class="badge s-cancelado" style="margin-bottom:10px;">Cancelado — estado final</div>
           <p style="font-size:11px; color:var(--text-low); font-family:var(--font-label); line-height:1.5;">
             Chamados cancelados não podem ser reabertos.
@@ -189,8 +209,26 @@
         {% endif %}
       </div>
 
+      {% if usuario_papel != 'solicitante' %}
+      <div class="detail-card">
+        <div class="detail-card-title">Prioridade</div>
+        <select class="field-input" id="sel-prioridade" style="margin-top:0;">
+          <option value="baixa" {% if chamado.prioridade == 'baixa' %}selected{% endif %}>Comum (SLA 48h)</option>
+          <option value="media" {% if chamado.prioridade == 'media' %}selected{% endif %}>Urgente (SLA 24h)</option>
+          <option value="alta"  {% if chamado.prioridade == 'alta'  %}selected{% endif %}>Crítico (SLA 4h)</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" id="btn-salvar-prioridade" style="margin-top:10px; width:100%; justify-content:center;">
+          Salvar prioridade
+        </button>
+      </div>
+      {% endif %}
+
+      {% if usuario_papel != 'solicitante' %}
       <div class="detail-card">
         <div class="detail-card-title">Atribuição</div>
+        <button class="btn btn-ghost btn-sm" id="btn-atribuir-mim" style="width:100%; justify-content:center; margin-bottom:8px;">
+          &#128100; Atribuir a mim
+        </button>
         <select class="field-input" id="sel-atribuido" style="margin-top:0;">
           <option value="">Não atribuído</option>
           {% for u in usuarios %}
@@ -212,44 +250,62 @@
           <span>{{ chamado.sla.detalhe }}</span>
         </div>
       </div>
+      {% endif %}
 
       <div class="detail-card">
         <div class="detail-card-title">Informações</div>
-        <div class="meta-row">
-          <span class="meta-label">Criado por</span>
-          <span class="meta-value">{{ chamado.criado_por_nome or '—' }}</span>
-        </div>
-        {% if chamado.solicitante_setor %}
-        <div class="meta-row">
-          <span class="meta-label">Setor solicitante</span>
-          <span class="meta-value">{{ chamado.solicitante_setor }}</span>
-        </div>
-        {% endif %}
-        <div class="meta-row">
-          <span class="meta-label">Atribuído a</span>
-          <span class="meta-value">{{ chamado.atribuido_nome or '—' }}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Setor</span>
-          <span class="meta-value">{{ chamado.setor_nome or '—' }}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">SLA</span>
-          <span class="meta-value">{{ chamado.sla_horas }}h</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Criado em</span>
-          <span class="meta-value" style="font-size:11px;">{{ chamado.criado_em }}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Atualizado</span>
-          <span class="meta-value" style="font-size:11px;">{{ chamado.atualizado_em }}</span>
-        </div>
-        {% if chamado.resolvido_em %}
-        <div class="meta-row">
-          <span class="meta-label">Resolvido em</span>
-          <span class="meta-value" style="font-size:11px; color:var(--ok);">{{ chamado.resolvido_em }}</span>
-        </div>
+        {% if usuario_papel == 'solicitante' %}
+          <div class="meta-row">
+            <span class="meta-label">Atribuído a</span>
+            <span class="meta-value">{{ chamado.atribuido_nome or '—' }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Aberto em</span>
+            <span class="meta-value" style="font-size:11px;">{{ chamado.criado_em }}</span>
+          </div>
+          {% if chamado.resolvido_em %}
+          <div class="meta-row">
+            <span class="meta-label">Resolvido em</span>
+            <span class="meta-value" style="font-size:11px; color:var(--ok);">{{ chamado.resolvido_em }}</span>
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="meta-row">
+            <span class="meta-label">Criado por</span>
+            <span class="meta-value">{{ chamado.criado_por_nome or '—' }}</span>
+          </div>
+          {% if chamado.solicitante_setor %}
+          <div class="meta-row">
+            <span class="meta-label">Setor solicitante</span>
+            <span class="meta-value">{{ chamado.solicitante_setor }}</span>
+          </div>
+          {% endif %}
+          <div class="meta-row">
+            <span class="meta-label">Atribuído a</span>
+            <span class="meta-value">{{ chamado.atribuido_nome or '—' }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Setor</span>
+            <span class="meta-value">{{ chamado.setor_nome or '—' }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">SLA</span>
+            <span class="meta-value">{{ chamado.sla_horas }}h</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Criado em</span>
+            <span class="meta-value" style="font-size:11px;">{{ chamado.criado_em }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Atualizado</span>
+            <span class="meta-value" style="font-size:11px;">{{ chamado.atualizado_em }}</span>
+          </div>
+          {% if chamado.resolvido_em %}
+          <div class="meta-row">
+            <span class="meta-label">Resolvido em</span>
+            <span class="meta-value" style="font-size:11px; color:var(--ok);">{{ chamado.resolvido_em }}</span>
+          </div>
+          {% endif %}
         {% endif %}
       </div>
 
@@ -274,14 +330,40 @@
       }
     });
 
-    document.getElementById("btn-salvar-atribuicao")?.addEventListener("click", async () => {
-      const usuario_id = document.getElementById("sel-atribuido").value || null;
+    document.getElementById("btn-salvar-prioridade")?.addEventListener("click", async () => {
+      const prioridade = document.getElementById("sel-prioridade").value;
+      const resp = await fetch(`/chamados/${chamadoId}/prioridade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+        body: JSON.stringify({ prioridade }),
+      });
+      if (resp.ok) window.location.reload();
+      else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data.erro || "Não foi possível atualizar a prioridade.");
+      }
+    });
+
+    async function salvarAtribuicao(usuario_id) {
       const resp = await fetch(`/chamados/${chamadoId}/atribuir`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
-        body: JSON.stringify({ usuario_id }),
+        body: JSON.stringify({ usuario_id: usuario_id || null }),
       });
       if (resp.ok) window.location.reload();
+      else {
+        const data = await resp.json().catch(() => ({}));
+        alert(data.erro || "Não foi possível atualizar a atribuição.");
+      }
+    }
+
+    document.getElementById("btn-atribuir-mim")?.addEventListener("click", () => {
+      salvarAtribuicao({{ usuario_id }});
+    });
+
+    document.getElementById("btn-salvar-atribuicao")?.addEventListener("click", () => {
+      const usuario_id = document.getElementById("sel-atribuido").value;
+      salvarAtribuicao(usuario_id);
     });
 
     {% if usuario_papel == 'admin' %}

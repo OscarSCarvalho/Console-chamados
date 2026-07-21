@@ -4,3 +4,5 @@ __pycache__/
 venv/
 *.db
 *.db-journal
+static/uploads/
+=*

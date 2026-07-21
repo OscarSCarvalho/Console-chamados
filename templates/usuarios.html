@@ -107,7 +107,7 @@
           <td style="color:var(--text-mid); font-size:12.5px;">{{ u.setor or '—' }}</td>
           <td>
             <span class="badge papel-{{ u.papel }}">
-              {{ {'admin': 'Admin', 'atendente': 'Atendente', 'solicitante': 'Solicitante'}[u.papel] }}
+              {{ {'admin': 'Admin', 'atendente': 'Atendente', 'solicitante': 'Usuário'}[u.papel] }}
             </span>
           </td>
           <td style="text-align:center; color:{% if u.chamados_ativos > 0 %}var(--amber-soft){% else %}var(--text-low){% endif %}; font-family:var(--font-display); font-size:16px;">
@@ -166,7 +166,7 @@
 
         <label class="field-label">Papel</label>
         <select class="field-input" name="papel">
-          <option value="solicitante">Solicitante</option>
+          <option value="solicitante">Usuário</option>
           <option value="atendente">Atendente</option>
           <option value="admin">Admin</option>
         </select>
@@ -193,7 +193,7 @@
 
         <label class="field-label">Papel</label>
         <select class="field-input" name="papel" id="edit-papel">
-          <option value="solicitante">Solicitante</option>
+          <option value="solicitante">Usuário</option>
           <option value="atendente">Atendente</option>
           <option value="admin">Admin</option>
         </select>
